@@ -3,30 +3,29 @@
  / _ \| '_/ _| ' \| |__| | ' \ || \ \ / | |_| \__ \ _ \
 /_/ \_\_| \__|_||_|____|_|_||_\_,_/_\_\  \___/|___/___/
 
-Introduction
-Live ISO
-Arch USB
-Install
-wipe
-partition
-format
-mount
-pacstrap
-fstab
-Configure
-locale
-hostname
-password
-bootloader
-networking
-user
-sudo
-noatime
-journal
-mkinitcpio
-nomodeset
-interfaces
+Steps:
+- wipe
+- partition
+- format
+- mount
+- pacstrap
+- fstab
 
+- Configure
+ - locale
+ - hostname
+ - password
+ - bootloader
+ - networking
+ - user
+ - sudo
+ - noatime
+ - journal
+ - mkinitcpio
+ - nomodeset
+ - interfaces
+
+# 1. Introduction
 This page explains how to install Arch Linux on a USB flash drive. The end result is a persistent installation identical to that on a normal hard drive along with several performance optimizations aimed at running Linux on removable flash media. It is compatible with both BIOS and UEFI booting modes.
 
 The only packages explicitly installed besides linux, linux-firmware, and base are: efibootmgr, grub, iwd, polkit, sudo, and vim
@@ -37,6 +36,7 @@ Install Base System
 Determine the target USB device name:
 lsblk
 
+## Wipe (optional)
 For the remainder of this guide, the device name will be referred to as /dev/sdX.
 wipe (optional)
 
@@ -45,6 +45,8 @@ dd if=/dev/zero of=/dev/sdX status=progress && sync
 
 Expect this to take a relatively long time (hour+) depending on the size of the USB.
 partition
+
+## Partition
 Create a 10M BIOS partition, a 500M EFI partition, and a Linux partition with the remaining space:
 
 sgdisk -o -n 1:0:+10M -t 1:EF02 -n 2:0:+500M -t 2:EF00 -n 3:0:0 -t 3:8300 /dev/sdX
@@ -59,10 +61,12 @@ Format the Linux partition with an ext4 filesystem:
 mkfs.ext4 /dev/sdX3
 mount
 
+## Mount
 Mount the ext4 formatted partition as the root filesystem:
+```sh
 mkdir -p /mnt/usb
 mount /dev/sdX3 /mnt/usb
-
+```
 Mount the FAT32 formatted EFI partition to /boot:
 mkdir /mnt/usb/boot
 mount /dev/sdX2 /mnt/usb/boot
@@ -76,6 +80,7 @@ Generate a new /etc/fstab using UUIDs as source identifiers:
 genfstab -U /mnt/usb > /mnt/usb/etc/fstab
 Configure Base System
 
+## Configure (chroot)
 All configuration is done within a chroot. Chroot into the new system:
 arch-chroot /mnt/usb
 
