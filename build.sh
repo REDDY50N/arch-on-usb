@@ -9,21 +9,106 @@
 # Docs:      https://mags.zone/help/arch-usb.html #
 #=================================================#
 
+VERSION=0.1
 DEBUG=false
-LOG=true
 HELPER=false
+LOG=true
 LOGFILE=$PWD/build.log
 
 # ===============================================
 # VARIABLES
 # ===============================================
 #TARGET=/dev/sdc
-TARGET=$1
 MNT="/mnt/usb"
 BOOT="/mnt/usb/boot"
+
+# doppelt MNT
+ROOTFSPATH="/mnt/usb"
+
 CHROOT="arch-chroot /mnt/usb"
-PACKAGES="linux linux-firmware base vim"
+CHROOTCMD="arch-chroot"
+
+
 HOSTNAME=flasher
+PACKAGES="linux linux-firmware base vim"
+# BASE PACKAGES
+PACKAGESADD="sudo libnewt"
+
+# ===============================================
+# CLI INTERFACE
+# ===============================================
+
+# OPTIONS (DEFAULT)
+WIPE="NO"
+ENTER_CHROOT="NO"
+TARGET=""
+
+function about() {
+  echo""  
+  echo "┌──────────────────────────────────────────┐"
+  echo "│ Arch Live on USB Creator                 │"
+  echo "│ ---------------------------------------- │"
+  echo "│ Author:   S. Reddy                       │"
+  echo "│ Version:  ${VERSION}                     │"
+  echo "│ ---------------------------------------- │"
+  echo "│ (c) Adolf Mohr Maschinenfabrik           │"
+  echo "└──────────────────────────────────────────┘"
+  echo""
+}
+
+function usage() {
+    echo "Usage: $(basename $0) <options>"
+    echo ""
+    echo "Options:"
+    echo "  --target <device-path> :"
+    echo "      Sets target drive /mnt/<sdX>"
+    echo ""
+    echo "  --wipe"
+    echo "      Wipe USB drive before building the LiveCD."
+    echo ""
+    echo "  --enter-chroot"
+    echo "      Starts a chroot environment after build."
+    echo ""
+    echo "  -h|--help"
+    echo "      This help dialog."
+    echo ""
+}
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+    key="$1"
+    case $key in
+        --target)
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --wipe)
+            WIPE="YES"
+            shift
+            ;;
+        --enter-chroot)
+            ENTER_CHROOT="YES"
+            shift
+            ;;
+        -h|--help)
+            about
+            usage
+            exit 0
+            shift
+            ;;
+        *)    # unknown option
+            POSITIONAL+=("$1") # save it in an array for later
+            echo "Unknown argument: ${POSITIONAL}"
+            usage
+            exit 1
+            shift
+            ;;
+    esac
+done
+set -- "${POSITIONAL[@]}" # restore positional parameters
+
 
 # ===============================================
 # CHECKS
@@ -40,25 +125,25 @@ HOSTNAME=flasher
 [ $(whoami) != root ] && echo "You must be root!" && exit 1
 
 # check if target is passed as argument
-[ -z $TARGET ] && echo "You must specify a target. Determine the target USB device name with lsblk first!" && exit 1
+[ -z $TARGET ] && echo -e "You must specify a target. Determine the target USB device name with lsblk first!\n" && usage && exit 1
 
 # ===============================================
 # FUNCTIONS
 # ===============================================
 function log()
 {
-    echo "$1"
-    [ $LOG == true ] && echo "$1" >> $LOGFILE
+  echo "$1"
+  [ $LOG == true ] && echo "$1" >> $LOGFILE
 }
 
 function error()
 {
-    echo "$1"
-    [ $LOG == true ] && echo "$1" >> $LOGFILE
-    exit 1
+  echo "$1"
+  [ $LOG == true ] && echo "$1" >> $LOGFILE
+  exit 1
 }
 
-
+#================ PREPARE ===================#
 function fullwipe()
 {
   # optional - may take time (1 hour+)
@@ -115,7 +200,7 @@ function unmounting()
     umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
   fi
 
-  log "==> Unmounting done!"
+  log "" && log "==> Unmounting done!"
 }
 
 function mounting()
@@ -130,26 +215,30 @@ function mounting()
   mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
   mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BOOT failed! ==> Hint: Reboot if mount fails due to unknow filesystem type »vfat«!"
 
-  log "==> Mounting done!"
+  log "" && log "==> Mounting done!"
 }
+
+
+
+#================ BASE SYSTEM ===================#
 
 function basesystem()
 {
   log "==> Download and install the Arch Linux base packages using pacstrap."
   pacstrap $MNT $PACKAGES
-  log "==> Installing base system done!"
+  log "" && log "==> Installing base system done!"
 }
 
 function fstabgen()
 {
   log "==> Generate a new /etc/fstab using UUIDs as source identifiers"
   genfstab -U /mnt/usb > /mnt/usb/etc/fstab 
-  log "==> Generating fstab done!"
+  log "" && log "==> Generating fstab done!"
 }
 
 #================ CONFIGURE ===================#
 
-function locale_cfg()
+function localecfg()
 {
 log "==> Set timezone"
 cat << EOF | $CHROOT
@@ -173,29 +262,32 @@ echo LANG=de_DE.UTF-8 > /etc/locale.conf
 EOF
 }
 
-function hostname_cfg()
+function hostnamecfg()
 {
-  locale HOSTNAME=gflash
 log "==> Change hostname to ${HOSTNAME}"  
 cat << EOF | $CHROOT
 echo ${HOSTNAME} > /etc/hostname
 EOF
+}
 
+function hostscfg()
+{
   local PATH=/etc/hosts
-  #TODO: failed due to path!
-cat << EOF | "${CHROOT}/${PATH}"
-127.0.0.1  localhost
-::1        localhost
-127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}
+
+cat << EOF | $CHROOT
+printf " \
+\n127.0.0.1  localhost \
+\n::1        localhost \
+\n127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}" > $PATH
 EOF
 }
 
-function setrootpw()
+function rootpwcfg()
 {
   #TODO: check if works!
-  log "==> Set root password!"
+  log "" && log "==> Set root password!"
 cat << EOF | $CHROOT
-passwd -q "evis32"
+usermod --password evis32 root
 EOF
 }
 
@@ -214,89 +306,96 @@ grub-mkconfig -o /boot/grub/grub.cfg
 EOF
 }
 
-function networking()
+
+function networkcfg()
 {
-log "Create network configuration file for automatically establish wired connections"
+log "" && log "==> Create network configuration file for automatically establish wired connections"
 local PATH=/etc/systemd/network/10-ethernet.network
 
-#TODO: failed due to path!
-log "PATH: ${CHROOT}/${PATH} or '${CHROOT}/${PATH}'"
-cat << EOF | "${CHROOT}/${PATH}"
-[Match]
-Name=en*
-Name=eth*
+# TODO:
+# printf 'line1\nline2\nline3\n'
+# echo -e ""
 
-[Network]
-DHCP=yes
-IPv6PrivacyExtensions=yes
-
-[DHCPv4]
-RouteMetric=10
-
-[IPv6AcceptRA]
-RouteMetric=10
+cat << EOF | $CHROOT
+printf "[Match] \
+\nName=en* \     
+\nName=en* \
+\nName=eth* \
+\n \
+\n[Network] \
+\nDHCP=yes \
+\nIPv6PrivacyExtensions=yes \  
+\n \
+\n[DHCPv4] \
+\nRouteMetric=10 \ 
+\n \
+\n[IPv6AcceptRA] \
+\nRouteMetric=10" > $PATH
 EOF
 
 # HINT: you can add wireless config here:
 # https://mags.zone/help/arch-usb.html
+}
 
-log "==> Enable networking"
+function networkenable()
+{
+log "==> Enable systemd networking service"
 cat << EOF | $CHROOT
 systemctl enable systemd-networkd.service
-EOF
 
-log "==> Enable resolved and create link to /run/systmed/resolve/stub-resolv.conf"
-cat << EOF | $CHROOT
 systemctl enable systemd-resolved.service
 ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 
-EOF
 
-log "==> Enable timesyncd"
-cat << EOF | $CHROOT
 systemctl enable systemd-timesyncd.service
 EOF
 }
 
-
-
-function setuser()
+function usercfg()
 {
   log "==> Set username and password."
 cat << EOF | $CHROOT
 useradd -m polar
-passwd polar
+usermod --password evis32 polar
 EOF
 }
 
-function addwheelgrp()
+function wheelgrpcfg()
 {
   log "==> Ensure the wheel group exists and add user to it."
 cat << EOF | $CHROOT
 groupadd wheel
-usermod -aG wheel user
+usermod -aG wheel polar
 EOF
 }
 
-
 function sudocfg()
 {
-  log "==> Configure sudo"
-cat << EOF | $CHROOT
-pacman -S sudo
-EOF
-
-local PATH=/etc/sudoers.d/10-sudo
-#TODO: failed due to path!
-cat << EOF | ${CHROOT}/${PATH}
-%sudo ALL=(ALL) ALL
-EOF
+  log "==> Configure sudo ..."
+  local PATH=/etc/sudoers.d/10-sudo
 
 cat << EOF | $CHROOT
+echo "%sudo ALL=(ALL) ALL" > $PATH
 groupadd sudo
 usermod -aG sudo user
 pacman -S polkit 
 EOF
 }
+
+function copytui()
+{
+  $CHROOTCMD $MNT 
+  
+}
+function changepw()
+{
+  echo -e "${IMAGE_PASSWORD}\n${IMAGE_PASSWORD}\n" | $CHROOTCMD ${ROOTFSPATH} passwd root 
+}
+
+if [ "${ENTER_CHROOT}" = "YES" ]
+then
+    $CHROOTCMD "${MNT}"
+fi
+
 
 ### TODO: optional steps, journal
 
@@ -310,8 +409,10 @@ EOF
 # ===========================
 # MAIN
 # ===========================
-log ""
+about
 log "Starting build $(date +"%D %T")"
+sleep 2
+
 ### prepare
 unmounting
 #fullwipe
@@ -324,13 +425,18 @@ basesystem
 fstabgen
 
 ### config
-locale_cfg
-hostname_cfg
-setrootpw
-bootloader
-networking
+localecfg
+hostnamecfg
+hostscfg
+rootpwcfg
 
-setuser
-addwheelgrp
-#sudocfg
+bootloader
+
+networkcfg
+networkenable
+usercfg
+wheelgrpcfg
+sudocfg
+
+
 

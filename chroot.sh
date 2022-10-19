@@ -5,11 +5,10 @@
 
 TARGET=$1
 MNT="/mnt/usb"
-BOOT="/mnt/usb/boot"
-CHROOT="arch-chroot /mnt/usb"
+CHROOTCMD="arch-chroot"
 
 # root check 
-[ $(whoami) != root ] && echo "You must be root!" && exit 1
+[ "$(whoami)" != root ] && echo "You must be root!" && exit 1
 
 # terget empty check
 [ -z $TARGET ] && echo "You must specify a target. Determine the target USB device name with lsblk first!" && exit 1
@@ -24,15 +23,11 @@ function mounting()
     mkdir -p "$MNT" && echo "Creating mountpoint $MNT done!"
     mount ${TARGET}3 $MNT && echo "Mounting ${TARGET}3 on $MNT done!" || echo "Mounting ${TARGET}3 on $MNT  failed!" && exit 1
   fi
-
-  # Mount the FAT32 formatted EFI partition to /boot:
-  #mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
-  #mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BO │ OT failed!"
 }
  
 function enter_chroot()
 {
-  arch-chroot $MNT
+  $CHROOTCMD $MNT
 }
 
 
