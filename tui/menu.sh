@@ -16,7 +16,7 @@
 PRODUCTION=false
 
 # show minimal menu for service updates
-SERVICEMENU=false
+SERVICEMENU=true
 
 # ===========================
 # PATH VARS
@@ -722,24 +722,32 @@ function main()
 {
     # TODO: remove cancel button; just for debug tui
 
-    if [ $SERVICEMENU == true]
+    if [ $SERVICEMENU == true ]
     then
-        log "Servicemenu"
+        CHOICE=$(
+            whiptail --backtitle "${BACKTITLE}" \
+            --title "Main Menu" --menu "Choose one option ..." \
+            --ok-button "Select" 16 100 0 \
+                1 "Flash (USB => SSD)" \
+                2 "Help" \
+                3>&2 2>&1 1>&3 )
+    else
+        CHOICE=$(
+            whiptail --backtitle "${BACKTITLE}" \
+            --title "Main Menu" --menu "Choose one option ..." \
+            --ok-button "Select" 16 100 0 \
+                1 "Flash (USB ➞ HD)" \
+                2 "Clone (HD ➞ USB)" \
+                3 "Tools" \
+                4 "Help" \
+                5 "Shutdown" \
+                3>&2 2>&1 1>&3 )
     fi 
 
 
     while true 
     do
-    CHOICE=$(
-    whiptail --backtitle "${BACKTITLE}" \
-     --title "Main Menu" --menu "Choose one option ..." \
-     --ok-button "Select" 16 100 0 \
-        1 "Flash (USB ➞ HD)" \
-        2 "Clone (HD ➞ USB)" \
-        3 "Tools" \
-        4 "Help" \
-        5 "Shutdown" \
-        3>&2 2>&1 1>&3 )
+    $CHOICE
 
     case $CHOICE in
     1)
