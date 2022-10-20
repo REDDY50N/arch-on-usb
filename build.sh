@@ -32,7 +32,7 @@ HOSTNAME=flasher
 ROOTPW="evis32"
 
 # BASE PACKAGES
-PACKAGES="linux linux-firmware base vim sudo libnewt"
+PACKAGES="linux linux-firmware base vim sudo libnewt fff ranger tmux"
 
 # ===============================================
 # CLI INTERFACE
@@ -144,6 +144,30 @@ function error()
 }
 
 #================ PREPARE ===================#
+function partioning()
+{
+  log "Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files"
+  sgdisk -Z ${TARGET}
+  sgdisk -o -n 1:0:+10M -t 1:EF02 -n 2:0:+500M -t 2:EF00 -n 3:0:+3G -t 3:8300 -n 4:0:0 -t 4:8300 $TARGET
+
+  wipefs -a ${TARGET}2
+  wipefs -a ${TARGET}3
+  wipefs -a ${TARGET}4
+
+  # Hint: Do not format the /dev/sdX1 block. This is the BIOS/MBR parition."
+
+  # Format the 500MB EFI system partition with a FAT32 filesystem:
+  mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
+
+  # Format the Linux partition with an ext4 filesystem:
+  mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
+
+  # Format the data partition with an exfat/ntfs filesystem:
+  mkfs.ext4 -q ${TARGET}4 && log "Creating ${TARGET}4 fs done!"
+}
+
+
+#================ TAG::DEPRECATED ===================#
 function fullwipe()
 {
   # optional - may take time (1 hour+)
@@ -163,10 +187,10 @@ function partition()
 {
   log "Partionining ..."
   
-  log "Create 10MB BIOS, 500MB EFI, remaining space for Linux filesystem (8300)" 
-  sgdisk -o -n 1:0:+10M -t 1:EF02 -n 2:0:+500M -t 2:EF00 -n 3:0:0 -t 3:8300 $TARGET
+  #log "Create 10MB BIOS, 500MB EFI, remaining space for Linux filesystem (8300)" 
+  #sgdisk -o -n 1:0:+10M -t 1:EF02 -n 2:0:+500M -t 2:EF00 -n 3:0:0 -t 3:8300 $TARGET
 
-  #log "Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files" 
+  log "Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files" 
   sgdisk -o -n 1:0:+10M -t 1:EF02 -n 2:0:+500M -t 2:EF00 -n 3:0:+3G -t 3:8300 -n 4:0:0 -t 4:8300 $TARGET && log "Partioning done!"
 }
 
@@ -185,6 +209,7 @@ function format()
   
   log "==> Formating done!"
 }
+#================ END::DEPRECATED ===================#
 
 function unmounting()
 {
@@ -308,6 +333,12 @@ grub-mkconfig -o /boot/grub/grub.cfg
 EOF
 }
 
+function newmkinitcpio()
+{
+  
+}
+
+#================ END::BOOTLAODER ===================#
 
 function networkcfg()
 {
@@ -438,9 +469,9 @@ sleep 2
 
 ### prepare
 unmounting
-#fullwipe
-partition
-format
+partioning
+#partition
+#format
 mounting
 
 ### base system

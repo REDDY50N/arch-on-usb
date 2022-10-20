@@ -15,6 +15,8 @@
 # flash on /dev/sda if true false: /dev/null (testing)
 PRODUCTION=false
 
+# show minimal menu for service updates
+SERVICEMENU=false
 
 # ===========================
 # PATH VARS
@@ -719,6 +721,13 @@ function progressbar() {
 function main()
 {
     # TODO: remove cancel button; just for debug tui
+
+    if [ $SERVICEMENU == true]
+    then
+        log "Servicemenu"
+    fi 
+
+
     while true 
     do
     CHOICE=$(
