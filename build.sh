@@ -18,7 +18,7 @@ LOGFILE=$PWD/build.log
 # ===============================================
 # VARIABLES
 # ===============================================
-#TARGET=/dev/sdc
+WORK="$(dirname $(readlink -f $0))"
 MNT="/mnt/usb"
 BOOT="/mnt/usb/boot"
 
@@ -28,11 +28,11 @@ ROOTFSPATH="/mnt/usb"
 CHROOT="arch-chroot /mnt/usb"
 CHROOTCMD="arch-chroot"
 
-
 HOSTNAME=flasher
-PACKAGES="linux linux-firmware base vim"
+ROOTPW="evis32"
+
 # BASE PACKAGES
-PACKAGESADD="sudo libnewt"
+PACKAGES="linux linux-firmware base vim sudo libnewt"
 
 # ===============================================
 # CLI INTERFACE
@@ -49,7 +49,7 @@ function about() {
   echo "│ Arch Live on USB Creator                 │"
   echo "│ ---------------------------------------- │"
   echo "│ Author:   S. Reddy                       │"
-  echo "│ Version:  ${VERSION}                     │"
+  echo "│ Version:  ${VERSION}                            │"
   echo "│ ---------------------------------------- │"
   echo "│ (c) Adolf Mohr Maschinenfabrik           │"
   echo "└──────────────────────────────────────────┘"
@@ -178,10 +178,10 @@ function format()
   mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
   
   # Format the Linux partition with an ext4 filesystem:
-  mkfs.ext4 ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
+  mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
 
   # Format the data partition with an exfat/ntfs filesystem:
-  mkfs.ext4 ${TARGET}4 && log "Creating ${TARGET}4 fs done!"
+  mkfs.ext4 -q ${TARGET}4 && log "Creating ${TARGET}4 fs done!"
   
   log "==> Formating done!"
 }
@@ -291,6 +291,8 @@ usermod --password evis32 root
 EOF
 }
 
+#================ BOOTLAODER ===================#
+
 function bootloader()
 {
 cat << EOF | $CHROOT
@@ -381,20 +383,41 @@ pacman -S polkit
 EOF
 }
 
-function copytui()
-{
-  $CHROOTCMD $MNT 
-  
-}
+# TODO: 
 function changepw()
 {
-  echo -e "${IMAGE_PASSWORD}\n${IMAGE_PASSWORD}\n" | $CHROOTCMD ${ROOTFSPATH} passwd root 
+  echo -e "${ROOTPW}\n${ROOTPW}\n" | $CHROOTCMD ${ROOTFSPATH} passwd root 
 }
 
-if [ "${ENTER_CHROOT}" = "YES" ]
-then
-    $CHROOTCMD "${MNT}"
-fi
+
+
+#================ TUI CONFIG ===================#
+function copytui()
+{
+  echo "PATH: $WORK/tui"
+  cp -r ${WORK}/tui /mnt/usb/opt 
+}
+
+
+
+function copy_template1()
+{
+  cp -r ${WORK}/tui /mnt/usb/opt 
+}
+
+
+function copy_template2()
+{
+  install -m 0644 $WORK/tui/ $MNT/opt
+}
+
+function copy_template3()
+{
+  mount -o bind "$WORK/tui" "$MNT/mnt"
+  $CHROOTCMD cp -r /mnt /opt
+  uexit
+  mount "$MNT/mnt"
+}
 
 
 ### TODO: optional steps, journal
@@ -436,7 +459,15 @@ networkcfg
 networkenable
 usercfg
 wheelgrpcfg
-sudocfg
+#sudocfg #TODO: dont works
+copytui
 
+if [ "${ENTER_CHROOT}" = "YES" ]
+then
+    $CHROOTCMD $MNT
+fi
+
+log "-----------------------------"
+log "DONE!"
 
 
