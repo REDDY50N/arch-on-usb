@@ -726,11 +726,34 @@ function main()
     then
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
-            --title "Main Menu" --menu "Choose one option ..." \
+            --title "Main Menu" --menu \
+            "Minimal Service Menu \nSelect your option ..." \
             --ok-button "Select" 16 100 0 \
                 1 "Flash (USB => SSD)" \
                 2 "Help" \
+                3 "Shutdown" \
                 3>&2 2>&1 1>&3 )
+
+        while true 
+        do
+        $CHOICE
+
+        case $CHOICE in
+        1)
+            flash_submenu_simple
+            ;;
+        2)
+            help
+            ;;
+        3)
+            shutdown
+            ;;
+        *)
+            exit
+            ;;
+        esac
+        done
+        
     else
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
@@ -742,36 +765,36 @@ function main()
                 4 "Help" \
                 5 "Shutdown" \
                 3>&2 2>&1 1>&3 )
+
+        while true 
+        do
+        $CHOICE
+
+        case $CHOICE in
+        1)
+            flash_submenu
+            ;;
+        2)
+            #clone_auto
+            #clone_manual
+            clone_prog
+            ;;
+        3)
+            tools
+            ;;
+        4)
+            help
+            ;;
+        5)
+            shutdown
+            ;;
+        *)
+            exit
+            ;;
+        esac
+        done        
     fi 
 
-
-    while true 
-    do
-    $CHOICE
-
-    case $CHOICE in
-    1)
-        flash_submenu
-        ;;
-    2)
-        #clone_auto
-        #clone_manual
-        clone_prog
-        ;;
-    3)
-        tools
-        ;;
-    4)
-        help
-        ;;
-    5)
-        shutdown
-        ;;
-    *)
-        exit
-        ;;
-    esac
-    done
 }
 
 main
