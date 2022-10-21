@@ -390,16 +390,16 @@ function rootpwcfg()
 function copytui()
 {
   log "copy $WORK/tui to ${MNT}/opt"
-  cp -rv ${WORK}/tui ${MNT}/opt
-  $CHROOTCMD chown root ${MNT}/opt/tui/*
-  $CHROOTCMD chmod +x ${MNT}/opt/tui/*
+  cp -rv ${WORK}/tui  /opt
+  $CHROOT chown root  /opt/tui/*
+  $CHROOT chmod +x    /opt/tui/*
 }
 
 function autostart()
 {
 log "create tui autostart on getty"
 
-FILE=etc/systemd/system/getty@tty1.service.d/autologin.conf
+FILE=/etc/systemd/system/getty@tty1.service.d/autologin.conf
 cat <<EOF > ${CHROOT}/${FILE}
 # /etc/systemd/system/getty\@tty1.service.d/override.conf
 [Service]
