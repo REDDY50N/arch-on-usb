@@ -13,13 +13,10 @@
 #set -x
 
 # flash on /dev/sda if true false: /dev/null (testing)
-
 ARMED=false
 
-# show minimal menu for service updates
-SERVICEMENU=true
-
-# which tui menu
+# which tui menu (service, production, develop)
+MENUCHOOSER=develop
 PRODUCTION=false
 SERVICE=false
 DEVELOP=true # default
@@ -322,7 +319,7 @@ function selectimg()
             log "Image selected: $selection => IMG: $_IMG"
         fi
     else
-        errorbox "Error selecting flash image!"
+        errorbox "Error selecting flash image!" && main
     fi
 }
 
@@ -411,7 +408,7 @@ function clone()
         
         echo 100 # display 100% when done
         sleep 2  # some time for user to see
-        exit
+        exit && main
     } | whiptail --title "$3" --gauge "Cloning..." 8 78 0
 }
 
@@ -612,6 +609,19 @@ function flash_pure_submenu()
     done
 }
 
+
+
+# ===========================
+# MAIN SUB-FUNCTIONS
+# ===========================
+function flash()
+{
+    if [ ]
+
+}
+
+
+
 ### SUB: TOOLS ###
 function tools()
 {
@@ -620,9 +630,11 @@ function tools()
     CHOICE=$(
     whiptail --backtitle "${BACKTITLE}" --title "Tools" --ok-button "Select" --cancel-button "Exit" --menu "CLI Tools for manual work!" 10 70 0 \
     1 "Terminal" \
-    2 "Filebrowser" \
-    3 "Network" \
-    4 "Archtail" \
+    2 "Partclone" \
+    3 "Filebrowser - Ranger" \
+    4 "Filebrowser - fff" \
+    5 "Ressources" \
+    6 "Archtail" \
     3>&2 2>&1 1>&3 )
 
     exitstatus=$?
@@ -633,14 +645,20 @@ function tools()
         tmux && main
         ;;
     2)
-        fff && main
+        partclone && main
         ;;
     3)
-        nmcli && main
+        ranger && main
         ;;
     4)
-        bash archtail.sh && main
+        fff && main
         ;;
+    5)
+        nmon && main
+        ;;
+    6)
+        bash $PWD/archtail.sh && main
+        ;;        
     *)
         exit && main
         ;;
@@ -651,13 +669,13 @@ function tools()
 ### SUB: HELP ###
 function showhelp()
 {
-    if [ SERVICE == true ]; then
+    if [ $MENUCHOOSER == "service" ]; then
         whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE_SERVICE" 0 0 0
         main
-    elif [ PRODUCTION == true ]; then
+    elif [ $MENUCHOOSER == "production" ]; then
         whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE_PRODUCTION" 0 0 0
         main
-    else
+    elif [ $MENUCHOOSER == "develop" ]; then
         whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE_DEVELOP" 0 0 0
         main
     fi
@@ -739,7 +757,7 @@ function main()
 {
     # TODO: remove cancel button; just for debug tui
 
-    if [ $SERVICE == true ]; then
+    if [ $MENUCHOOSER == "service" ]; then
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
             --title "Main Menu" --menu \
@@ -756,8 +774,8 @@ function main()
 
         case $CHOICE in
         1)
-            # TODO: flash submenu service
-            flash_submenu_simple
+            serviceflash
+            #flash_submenu_simple
             ;;
         2)
             showhelp
@@ -770,7 +788,7 @@ function main()
             ;;
         esac
         done
-    elif [ $PRODUCTION == true ]; then
+    elif [ $MENUCHOOSER == "production" ]; then
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
             --title "Main Menu" --menu "Choose one option ..." \
@@ -808,14 +826,13 @@ function main()
             ;;
         esac
         done        
-
-    else # DEVELOP
+    elif [ $MENUCHOOSER == "develop" ]; then
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
             --title "Main Menu" --menu "Choose one option ..." \
             --ok-button "Select" 16 100 0 \
-                1 "Flash (USB ➞ HD)" \
-                2 "Clone (HD ➞ USB)" \
+                1 "Flash" \
+                2 "Clone" \
                 3 "Tools" \
                 4 "Help" \
                 5 "Shutdown" \
@@ -847,7 +864,9 @@ function main()
             exit
             ;;
         esac
-        done        
+        done 
+    else # empty
+        error "No menu option choosed! Check MENUCHOOSER variable on top of this script!"     
     fi 
 }
 
