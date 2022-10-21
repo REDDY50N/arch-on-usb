@@ -1,4 +1,36 @@
-HELP PAGE
+┌─────────────────────────────────────────────────────────────────────────┐
+│ HELP PAGE
+│ 
+
+
+1) Flash        - Write an image on a 2nd USB drive to Geshems SSD drive.
+2) HELP         - This help page
+4) Shutdown     - Shut Box PC down
+
+* Flash
+
+
+
+
+
+
+│ (c) Adolf Mohr Maschinenfabrik           │
+└─────────────────────────────────────────────────────────────────────────┘
+  
+
+
+
+
+
+
+
+ 
+ 
+  ---------------------------------------- │"
+  echo "│ Author:   S. Reddy                       │"
+  echo "│ Version:  ${VERSION}                            │"
+  echo "│ ---------------------------------------- │"
+
 
 Functions:
 1) Flash        - Write an image on a 2nd USB drive to Geshems SSD drive.

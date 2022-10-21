@@ -13,21 +13,25 @@
 #set -x
 
 # flash on /dev/sda if true false: /dev/null (testing)
-PRODUCTION=false
+
+ARMED=false
 
 # show minimal menu for service updates
 SERVICEMENU=true
+
+source $PWD/build.sh
+echo $PRODUCTION
 
 # ===========================
 # PATH VARS
 # ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
 HELPFILE=${SCRIPTDIR}/help
-STARTDIR="/mnt/usb"
-EXTENSION='.img.gz'
 
-# for test
-STARTDIR="$HOME/Code"
+# tui filebrowser
+EXTENSION='.img.gz'
+STARTDIR="/mnt/usb" #STARTDIR="/mnt/data"
+STARTDIR="$HOME/Code" # for test
 
 TUILOG="${SCRIPTDIR}/tui.log"
 ERRORLOG="${SCRIPTDIR}/error.log"
@@ -36,7 +40,6 @@ ERRORLOG="${SCRIPTDIR}/error.log"
 # TEXT VARS
 # ===========================
 BACKTITLE="Geshem Flasher 1.0"
-
 
 from=/dev/sda1
 to=/dev/null
@@ -344,8 +347,8 @@ function flash()
     #(gunzip -c ${filepath}/${filename} | pv > /dev/null ) 2>&1 | \
     #    whiptail --gauge "Flashing dd image to harddrive ..." 10 70 0
 
-    [ $PRODUCTION == true ] && TARGET="/dev/sda" && log "dd flash target: /dev/sda"
-    [ $PRODUCTION == false ] && TARGET="/dev/sdb" && log "dd flash target: /dev/null"
+    [ $ARMED == true ] && TARGET="/dev/sda" && log "dd flash target: $TARGET"
+    [ $ARMED == false ] && TARGET="/dev/null" && log "dd flash target: $TARGET"
 
     CMD2="(gunzip -c "$_IMG" | pv > /dev/sdb ) 2>&1 |"
     
@@ -753,7 +756,7 @@ function main()
             ;;
         esac
         done
-        
+
     else
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
@@ -794,7 +797,6 @@ function main()
         esac
         done        
     fi 
-
 }
 
 main

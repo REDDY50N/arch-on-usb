@@ -379,6 +379,8 @@ function copytui()
 {
   log "copy $WORK/tui to ${MNT}/opt"
   cp -rv ${WORK}/tui ${MNT}/opt
+  $CHROOTCMD chown root ${MNT}/opt/tui/*
+  $CHROOTCMD chmod +x ${MNT}/opt/tui/*
 }
 
 function autostart()
