@@ -36,7 +36,7 @@ ROOTPW="evis32"
 TUI="/opt/tui/menu.sh"
 
 # BASE PACKAGES
-PACKAGES="linux linux-firmware base grub efibootmgr polkit vim sudo libnewt fff ranger tmux"
+PACKAGES="linux linux-firmware base grub efibootmgr polkit vim sudo pv partclone libnewt fff ranger tmux nmon"
 
 # ===============================================
 # CLI INTERFACE
@@ -229,6 +229,18 @@ function basesystem()
   log "==> Installing base system done!" && log ""
 }
 
+
+
+# Install Yay
+function install_yay()
+{
+  local PATH=/tmp/build
+  $CHROOT pacman -S --needed git base-devel
+  $CHROOT mkdir -p $PATH && cd $PATH && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
+}
+
+
+
 function fstabgen()
 {
   log "==> Generate a new /etc/fstab using UUIDs as source identifiers"
@@ -414,6 +426,7 @@ mounting
 
 ### base system ###
 basesystem
+install_yay
 fstabgen
 
 ### config ###

@@ -19,14 +19,20 @@ ARMED=false
 # show minimal menu for service updates
 SERVICEMENU=true
 
-source $PWD/build.sh
-echo $PRODUCTION
+# which tui menu
+PRODUCTION=false
+SERVICE=false
+DEVELOP=true # default
 
 # ===========================
 # PATH VARS
 # ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
-HELPFILE=${SCRIPTDIR}/help
+
+# tui help files
+HELPFILE_SERVICE=${SCRIPTDIR}/help_service.txt
+HELPFILE_PRODUCTION=${SCRIPTDIR}/help_production.txt
+HELPFILE_DEVELOP=${SCRIPTDIR}/help
 
 # tui filebrowser
 EXTENSION='.img.gz'
@@ -510,7 +516,7 @@ function clone_prog()
     exitstatus=$?
     [[ "$exitstatus" = 1 ]] && main
     
-    mount_usb
+    mount_usb 
     clone $FROM $TO "Backup xxx:"
 }
 
@@ -643,10 +649,18 @@ function tools()
 }
 
 ### SUB: HELP ###
-function help()
+function showhelp()
 {
-    whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE" 0 0 0
-    main
+    if [ SERVICE == true ]; then
+        whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE_SERVICE" 0 0 0
+        main
+    elif [ PRODUCTION == true ]; then
+        whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE_PRODUCTION" 0 0 0
+        main
+    else
+        whiptail --textbox --scrolltext --ok-button "Exit" "$HELPFILE_DEVELOP" 0 0 0
+        main
+    fi
 }
 
 
@@ -725,14 +739,13 @@ function main()
 {
     # TODO: remove cancel button; just for debug tui
 
-    if [ $SERVICEMENU == true ]
-    then
+    if [ $SERVICE == true ]; then
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
             --title "Main Menu" --menu \
             "Minimal Service Menu \nSelect your option ..." \
             --ok-button "Select" 16 100 0 \
-                1 "Flash (USB => SSD)" \
+                1 "Flash (System Partition)" \
                 2 "Help" \
                 3 "Shutdown" \
                 3>&2 2>&1 1>&3 )
@@ -743,10 +756,11 @@ function main()
 
         case $CHOICE in
         1)
+            # TODO: flash submenu service
             flash_submenu_simple
             ;;
         2)
-            help
+            showhelp
             ;;
         3)
             shutdown
@@ -756,8 +770,46 @@ function main()
             ;;
         esac
         done
+    elif [ $PRODUCTION == true ]; then
+        CHOICE=$(
+            whiptail --backtitle "${BACKTITLE}" \
+            --title "Main Menu" --menu "Choose one option ..." \
+            --ok-button "Select" 16 100 0 \
+                1 "Flash (full drive)" \
+                2 "Clone (full drive)" \
+                3 "Help" \
+                4 "Shutdown" \
+                3>&2 2>&1 1>&3 )
 
-    else
+        while true 
+        do
+        $CHOICE
+
+        case $CHOICE in
+        1)
+            flash_submenu 
+            ;;
+        2)
+            #clone_auto
+            #clone_manual
+            clone_prog
+            ;;
+        3)
+            tools
+            ;;
+        4)
+            showhelp
+            ;;
+        5)
+            shutdown
+            ;;
+        *)
+            exit
+            ;;
+        esac
+        done        
+
+    else # DEVELOP
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
             --title "Main Menu" --menu "Choose one option ..." \
@@ -786,7 +838,7 @@ function main()
             tools
             ;;
         4)
-            help
+            showhelp
             ;;
         5)
             shutdown
