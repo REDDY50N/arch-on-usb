@@ -22,26 +22,27 @@ set -o pipefail
 ARMED=false
 
 # which tui menu (service, production, develop)
-MENUCHOOSER=service
+#MENUCHOOSER=service
+
+
 
 
 # ===========================
 # INCLUDE SCRIPTS / FILES
 # ===========================
-source $(dirname "$0")/flash4service.sh
-
-# tui help files
-HELPFILE_SERVICE=${SCRIPTDIR}/help_service.txt
-HELPFILE_PRODUCTION=${SCRIPTDIR}/help_production.txt
-HELPFILE_DEVELOP=${SCRIPTDIR}/help
-
-
-# ===========================
-# PATH VARS
-# ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
 
-# tui filebrowser
+source "$(dirname "$0")/flash4service.sh"
+source "$(dirname "$0")/filebrowser.sh"
+
+# tui help files
+HELPFILE_SERVICE=${SCRIPTDIR}/help4service
+HELPFILE_PRODUCTION=${SCRIPTDIR}/help4production
+HELPFILE_DEVELOP=${SCRIPTDIR}/help4dev
+
+# ===========================
+# FILEBROWSER VARS
+# ===========================
 EXTENSION='.img.gz'
 STARTDIR="/mnt/usb" #STARTDIR="/mnt/data"
 STARTDIR="$HOME/Code" # for test
@@ -88,14 +89,42 @@ export REDBLUE='
 # chosen color profile
 export NEWT_COLORS=$REDBLUE
 
+# ===========================
+# CLI ARGS
+# ===========================
+    POSITIONAL=()
+    while [[ $# -gt 0 ]]
+    do
+        key="$1"
+
+        case $key in
+            -m|--mode)
+                MENUCHOOSER="$2"
+                shift
+                shift
+                ;;
+            -h|--help)
+                about
+                usage
+                exit 0
+                shift
+                ;;
+            *)    # unknown option
+                POSITIONAL+=("$1") # save it in an array for later
+                echo "Unknown argument: ${POSITIONAL}"
+                usage
+                exit 1
+                shift
+                ;;
+        esac
+    done
+    set -- "${POSITIONAL[@]}" # restore positional parameters
 
 # ===========================
 # MAIN MENU
 # ===========================
 function main()
 {
-    # TODO: remove cancel button; just for debug tui
-
     if [ $MENUCHOOSER == "service" ]; then
         CHOICE=$(
             whiptail --backtitle "${BACKTITLE}" \
@@ -196,6 +225,7 @@ function main()
         error "No menu option choosed! Check MENUCHOOSER variable on top of this script!"     
     fi 
 }
+
 
 # ===========================
 # MAIN MENU - FLASH
