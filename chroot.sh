@@ -3,15 +3,15 @@
 # Simple helper script to mount and enter chroot
 # to test if everthing in build.sh was done correctly.
 
-TARGET=$1
+TARGET=""
 MNT="/mnt/usb"
 CHROOTCMD="arch-chroot"
 
 # root check 
 [ "$(whoami)" != root ] && echo "You must be root!" && exit 1
 
-# terget empty check
-[ -z $TARGET ] && echo "You must specify a target. Determine the target USB device name with lsblk first!" && exit 1
+# target empty check
+#[ -z $TARGET ] && echo "You must specify a target. Determine the target USB device name with lsblk first!" && exit 1
 
 function mounting()
 {
@@ -32,6 +32,7 @@ function enter_chroot()
 
 
 ### MAIN ###
-mounting
-enter_chroot
+#mounting
+#enter_chroot
+
 

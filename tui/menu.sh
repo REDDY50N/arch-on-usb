@@ -17,28 +17,19 @@ set -u  # treat undefined vars as erros
 set -o pipefail
 
 
-
-# flash on /dev/sda if true false: /dev/null (testing)
-ARMED=false
-
-# which tui menu (service, production, develop)
-#MENUCHOOSER=service
-
-
-
-
 # ===========================
 # INCLUDE SCRIPTS / FILES
 # ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
 
-source "$(dirname "$0")/flash4service.sh"
-source "$(dirname "$0")/filebrowser.sh"
+source $(dirname "$0")/flash/*
+source $(dirname "$0")/clone/*
+source $(dirname "$0")/filebrowser.sh
 
 # tui help files
-HELPFILE_SERVICE=${SCRIPTDIR}/help4service
-HELPFILE_PRODUCTION=${SCRIPTDIR}/help4production
-HELPFILE_DEVELOP=${SCRIPTDIR}/help4dev
+HELPFILE_SERVICE=${SCRIPTDIR}/help/help4service
+HELPFILE_PRODUCTION=${SCRIPTDIR}/help/help4production
+HELPFILE_DEVELOP=${SCRIPTDIR}/help/help4dev
 
 # ===========================
 # FILEBROWSER VARS
@@ -250,9 +241,7 @@ function flash()
 function serviceflash()
 {
     log "call: serviceflash()"
-    source $(dirname "$0")/flash4service.sh
-    flash4service
-    infobox "Hello Flasher" "Flash it"
+    flash4service_test
 }
 
 function productionflash()

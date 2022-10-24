@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# set -x
+set -e
+set -u
+set -o pipefail
+
+[ "$(whoami)" != "root" ] && echo "You must be root or use the sudo command!" && exit 1
+
+#source $(dirname "$0")/build.sh
+source $(dirname "$0")/chroot.sh
+
+# default
+FULL=NO
+TUI=NO
+UPDATE_CONFIG=N0
+ENTER_CHROOT=NO
+
+
+function options() {
+    echo "Usage: $(basename $0) <options>"
+    echo ""
+    echo "Options:"
+    echo "  --full </dev/sdX>"
+    echo "      Install full image with tui."
+    echo ""
+    echo "  --tui </dev/sdX>"
+    echo "      Update only tui menu."
+    echo ""
+    echo "  --config </dev/sdX>"
+    echo "      Update only config."
+    echo ""
+    echo "  --enter-chroot </dev/sdX>"
+    echo "      Starts a chroot environment after image creation."
+    echo ""
+    echo "  -h|--help :"
+    echo "      This help dialog."
+    echo ""
+}
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]
+do
+    key="$1"
+
+    case $key in
+       --full)i
+            FULL="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --update-tui)
+            TUI="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --update-config)
+            UPDATE_CONFIG="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --enter-chroot)
+            ENTER_CHROOT="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        -h|--help)
+            options
+            exit 0
+            shift
+            ;;
+        *)    # unknown option
+            POSITIONAL+=("$1") # save it in an array for later
+            echo "Unknown argument: ${POSITIONAL}"
+            usage
+            exit 1
+            shift
+            ;;
+    esac
+done
+set -- "${POSITIONAL[@]}" # restore positional parameters
+
+
+
+
+# FULL DEPLOY
+if [ $FULL == "YES"  ]
+then
+  echo "not implemented yet! ==> should call /bin/bash build.sh -target /dev/sdX"
+fi
+
+if [ $ENTER_CHROOT == "YES" ]
+then
+  mounting $TARGET && enter_chroot
+fi
+
+if [ $TUI == "YES"  ]
+then
+  mounting $TARGET && sudo cp -rv tui /mnt/usb/root/tui
+fi
+
+
+
+
