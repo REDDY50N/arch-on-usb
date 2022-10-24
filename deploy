@@ -1,33 +1,51 @@
 #!/bin/bash
 
+# This is the main entry point.
+
 # set -x
 set -e
 set -u
 set -o pipefail
 
+# root check
 [ "$(whoami)" != "root" ] && echo "You must be root or use the sudo command!" && exit 1
 
+source $(dirname "$0")/version
 #source $(dirname "$0")/build.sh
 source $(dirname "$0")/chroot.sh
 
-# default
-FULL=NO
-TUI=NO
+# defaults
+FULLBUILD=NO
+UPDATE_TUI=NO
 UPDATE_CONFIG=N0
 ENTER_CHROOT=NO
 
+function about() {
+  echo""  
+  echo "┌──────────────────────────────────────────┐"
+  echo "│ Arch Live on USB - Image Creator         │"
+  echo "│ ---------------------------------------- │"
+  echo "│ Author:   S. Reddy                       │"
+  echo "│ Version:  ${VERSION}                            │"
+  echo "│ ---------------------------------------- │"
+  echo "│ Purpose:  Swiss Army Knife with tui for  │"
+  echo "│           arch install, backup & tools   │"
+  echo "└──────────────────────────────────────────┘"
+  echo""
+}
 
 function options() {
+    echo "┌──────────────────────────────────────────┐"
     echo "Usage: $(basename $0) <options>"
     echo ""
     echo "Options:"
     echo "  --full </dev/sdX>"
     echo "      Install full image with tui."
     echo ""
-    echo "  --tui </dev/sdX>"
+    echo "  --update-tui </dev/sdX>"
     echo "      Update only tui menu."
     echo ""
-    echo "  --config </dev/sdX>"
+    echo "  --update-config </dev/sdX>"
     echo "      Update only config."
     echo ""
     echo "  --enter-chroot </dev/sdX>"
@@ -35,40 +53,41 @@ function options() {
     echo ""
     echo "  -h|--help :"
     echo "      This help dialog."
+    echo "└──────────────────────────────────────────┘"
     echo ""
 }
 
+
+# save cli arguments in array
 POSITIONAL=()
 while [[ $# -gt 0 ]]
 do
     key="$1"
 
     case $key in
-       --full)i
-            FULL="YES"
+        --target)
             TARGET="$2"
             shift
             shift
             ;;
-        --update-tui)
-            TUI="YES"
-            TARGET="$2"
+       --full)
+            FULLBUILD="YES"
             shift
+            ;;
+        --update-tui)
+            UPDATE_TUI="YES"
             shift
             ;;
         --update-config)
             UPDATE_CONFIG="YES"
-            TARGET="$2"
-            shift
             shift
             ;;
         --enter-chroot)
             ENTER_CHROOT="YES"
-            TARGET="$2"
-            shift
             shift
             ;;
-        -h|--help)
+        -h|--help)
+            about
             options
             exit 0
             shift
@@ -76,7 +95,7 @@ do
         *)    # unknown option
             POSITIONAL+=("$1") # save it in an array for later
             echo "Unknown argument: ${POSITIONAL}"
-            usage
+            options
             exit 1
             shift
             ;;
@@ -86,22 +105,34 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 
 
 
+# ===============================================
+# MAIN
+# ===============================================
+if [ ! -z "${TARGET}" ]; then
+    if [ $FULLBUILD == "YES" ]; then
+        echo "not implemented yet! ==> should call /bin/bash build.sh -target /dev/sdX"
+    fi
 
-# FULL DEPLOY
-if [ $FULL == "YES"  ]
-then
-  echo "not implemented yet! ==> should call /bin/bash build.sh -target /dev/sdX"
+    if [ $UPDATE_TUI == "YES" ]; then
+        mounting $TARGET && cp -rv tui /mnt/usb/root/tui
+    fi
+
+    if [ $UPDATE_CONFIG == "YES" ];     then
+        mounting $TARGET && echo "img_updatecfg --target /dev/sdb"
+    fi
+
+    if [ $ENTER_CHROOT == "YES" ]; then
+        mounting $TARGET && enter_chroot
+    fi
+else
+        echo
+        echo "==> You must specify a target!"
+        echo
+        options
 fi
 
-if [ $ENTER_CHROOT == "YES" ]
-then
-  mounting $TARGET && enter_chroot
-fi
 
-if [ $TUI == "YES"  ]
-then
-  mounting $TARGET && sudo cp -rv tui /mnt/usb/root/tui
-fi
+
 
 
 

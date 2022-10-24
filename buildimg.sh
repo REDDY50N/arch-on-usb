@@ -1,17 +1,10 @@
 #!/bin/bash
 
-#=================================================#
-# USB Live System - Geshem Flasher 2.0            #
-#=================================================#
-# Author:    S. Reddy (Polar)                     #
-#=================================================#
-# Purpose:   Install arch on USB with pactsrap    #
-# Docs:      https://mags.zone/help/arch-usb.html #
-#=================================================#
 
 # TODO: lot of refactoring ==> split into helper functions 
 
 source $(dirname "$0")/version
+
 
 DEBUG=false
 HELPER=false
@@ -48,21 +41,8 @@ WIPE="NO"
 ENTER_CHROOT="NO"
 TARGET=""
 
-function about() {
-  echo""  
-  echo "┌──────────────────────────────────────────┐"
-  echo "│ Arch Live on USB - Image Creator         │"
-  echo "│ ---------------------------------------- │"
-  echo "│ Author:   S. Reddy                       │"
-  echo "│ Version:  ${VERSION}                            │"
-  echo "│ ---------------------------------------- │"
-  echo "│ Purpose:  Swiss Army Knife with tui for  │"
-  echo "│           arch install, backup & tools   │"
-  echo "└──────────────────────────────────────────┘"
-  echo""
-}
 
-function usage() {
+function buildimg_usage() {
     
   echo "┌──────────────────────────────────────────┐"
   echo "Usage: $(basename $0) <options>"
@@ -77,7 +57,7 @@ function usage() {
   echo "  --enter-chroot"
   echo "      Starts a chroot environment after build."
   echo ""
-  echo "  -h|--help"
+  echo "  --usage"
   echo "      This help dialog."
   echo "└──────────────────────────────────────────┘"
   echo ""
@@ -101,8 +81,8 @@ do
             ENTER_CHROOT="YES"
             shift
             ;;
-        -h|--help)
-            about
+        --usage)
+            buildimg_usage
             usage
             exit 0
             shift
