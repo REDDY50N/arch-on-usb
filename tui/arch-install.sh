@@ -48,36 +48,32 @@ TARGET=""
 function about() {
   echo""  
   echo "┌──────────────────────────────────────────┐"
-  echo "│ Arch Live on USB - Image Creator         │"
+  echo "│ Arch Live on USB Creator                 │"
   echo "│ ---------------------------------------- │"
   echo "│ Author:   S. Reddy                       │"
   echo "│ Version:  ${VERSION}                            │"
   echo "│ ---------------------------------------- │"
-  echo "│ Purpose:  Swiss Army Knife with tui for  │"
-  echo "│           arch install, backup & tools   │"
+  echo "│ (c) Adolf Mohr Maschinenfabrik           │"
   echo "└──────────────────────────────────────────┘"
   echo""
 }
 
 function usage() {
-    
-  echo "┌──────────────────────────────────────────┐"
-  echo "Usage: $(basename $0) <options>"
-  echo ""
-  echo "Options:"
-  echo "  --target <device-path> :"
-  echo "      Sets target drive /mnt/<sdX>"
-  echo ""
-  echo "  --fullwipe"
-  echo "      Wipe USB drive before building the LiveCD."
-  echo ""
-  echo "  --enter-chroot"
-  echo "      Starts a chroot environment after build."
-  echo ""
-  echo "  -h|--help"
-  echo "      This help dialog."
-  echo "└──────────────────────────────────────────┘"
-  echo ""
+    echo "Usage: $(basename $0) <options>"
+    echo ""
+    echo "Options:"
+    echo "  --target <device-path> :"
+    echo "      Sets target drive /mnt/<sdX>"
+    echo ""
+    echo "  --fullwipe"
+    echo "      Wipe USB drive before building the LiveCD."
+    echo ""
+    echo "  --enter-chroot"
+    echo "      Starts a chroot environment after build."
+    echo ""
+    echo "  -h|--help"
+    echo "      This help dialog."
+    echo ""
 }
 
 POSITIONAL=()
@@ -395,13 +391,14 @@ function autostart()
 log "create tui autostart on getty"
 
 
-cat <<EOF > ${MNT}/etc/fstab
+cat <<EOF > ${ROOTFS_PATH}/etc/fstab
 UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
 UUID=${UUID_DATAFS}  /data      vfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
 EOF
 
-# file: /etc/systemd/system/getty\@tty1.service.d/override.conf
-cat <<EOF > ${MNT}/etc/systemd/system/getty@tty1.service.d/autologin.conf
+# /etc/systemd/system/getty\@tty1.service.d/override.conf
+FILE=/etc/systemd/system/getty@tty1.service.d/autologin.conf
+cat <<EOF > ${CHROOT}/${FILE}
 [Service]
 ExecStart=
 ExecStart=-/usr/sbin/agetty --autologin root --login-program ${TUI} --noissue --noclear %I $TERM
@@ -444,7 +441,6 @@ wheelgrpcfg
 
 #sudocfg #TODO: dont works
 copytui
-autostart
 
 ###  ###
 if [ "${ENTER_CHROOT}" = "YES" ]
