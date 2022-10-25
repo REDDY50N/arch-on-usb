@@ -1,32 +1,55 @@
 #!/bin/bash
 
+
+# image repo 
 function mount_sdb4()
 {
     DEV=/dev/sdb4
-    TO=/mnt/repo
+    TO=/mnt/usb
     mkdir -p $TO && \
     mount $DEV $TO && \
     log "Mounting $DEV to $TO ..."
 }
 
+### SERVICE UPDATE ###
 function clone_sda2()
 {
     FROM=/dev/sda2
-    TO=sda2.img
+    TO=/mnt/usb/nprohd_sda2_$(date +%F_%H-%M-%S).img
     log "Cloning $FROM to $TO ..."
-    partclone.ext4 -d -c -s $FROM -o $TO && \
+    partclone.ext4 -N -d -c -s $FROM -o $TO && \
+    partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO
     log "Cloning $FROM to $TO succesful."
 }
 
 function flash_sda2()
 {
-    FROM=sda2.img
+    selectimg
+    FROM=_IMG #sda2.img # TODO: whiptail filebrowser
     TO=/dev/sda2
     log "Restore $FROM to $TO ..."
     partclone.ext4 -d -r -s sda2.img -o /dev/sda2 && \
     log "Restoring $FROM to $TO succesful."
 }
 
+function selectimg()
+{
+    _IMG=""
+
+    filebrowser "Select a image to flash" "$STARTDIR"
+
+    exitstatus=$?
+    if [ $exitstatus == 0 ]; then
+        if [ "$selection" == "" ]; then
+            [[ "$exitstatus" == 1 ]] && main
+        else
+            _IMG=$selection
+            log "Image selected: $selection => IMG: $_IMG"
+        fi
+    else
+        errorbox "Error selecting flash image!" && main
+    fi
+}
 
 
 function clone_sda2()

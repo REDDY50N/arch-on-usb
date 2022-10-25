@@ -5,8 +5,8 @@
 
 
 # Clone - dd flash with pv - gzip
-pv /dev/sda | gzip > /mnt/backup/nprohd.img.gz
-pv /dev/sda2 | zstd -16 > /mnt/backup/nprohd.zst
+pv -n /dev/sda | gzip > /mnt/backup/nprohd.img.gz
+pv -n /dev/sda2 | zstd -16 > /mnt/backup/nprohd.zst
 
 # Flash
 gzcat /mnt/backup/nprohd.img.gz | pv > /dev/sda3
