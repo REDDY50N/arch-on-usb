@@ -22,9 +22,7 @@ set -o pipefail
 # ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
 
-source $(dirname "$0")/flash/*
-source $(dirname "$0")/clone/*
-source $(dirname "$0")/filebrowser.sh
+source $(dirname "$0")/bin/*
 
 # tui help files
 HELPFILE_SERVICE=${SCRIPTDIR}/help/help4service
@@ -131,7 +129,7 @@ function main()
         do
         case $CHOICE in
         1)
-            flash && main
+            mount_home && flash_sda2 && main
             ;;
         2)
             showhelp
@@ -159,10 +157,10 @@ function main()
         do
         case $CHOICE in
         1)
-            flash && main
+            mount_home && flash_sda && main
             ;;
         2)
-            clone_prog && main
+            unmount && mount_home && clone_sda && main
             ;;
         3)
             showhelp
