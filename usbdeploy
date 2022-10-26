@@ -1,22 +1,17 @@
 #!/bin/bash
 
-#=================================================#
-# USB Live System - Geshem Flasher 2.0            #
-#=================================================#
-# Author:    S. Reddy (Polar)                     #
-#=================================================#
-# Purpose:   Install arch on USB with pactsrap    #
-# Docs:      https://mags.zone/help/arch-usb.html #
-#=================================================#
+# DEBUG OPTIONS:
+#set -x # trace complete output
+set -e # stop if one command fails
+set -u # no undefined/empty variables allowed
+set -o pipefail # stop if one pipe fails
 
-# TODO: lot of refactoring ==> split into helper functions 
-
+# INCLUDES
 source $(dirname "$0")/version
 
-DEBUG=false
-HELPER=false
+# LOGS
 LOG=true
-LOGFILE=$PWD/build.log
+LOGFILE=$(dirname "$0")/build.log
 
 # ===============================================
 # VARIABLES
@@ -28,59 +23,63 @@ BOOT="/mnt/usb/boot"
 CHROOT="arch-chroot /mnt/usb"
 CHROOTCMD="arch-chroot"
 
-HOSTNAME=flasher
+HOSTNAME=superman
 USER=polar
 ROOTPW="evis32"
 
-# TUI
-TUI="/opt/tui/menu.sh"
+# read packages from file
+PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
 
-# BASE PACKAGES
-# TODO: read from package file
-PACKAGES="linux linux-firmware base git base-devel grub efibootmgr polkit vim sudo pv fsarchiver clonezilla partclone partimage libnewt fff ranger tmux nmon"
 
 # ===============================================
 # CLI INTERFACE
 # ===============================================
 
 # OPTIONS (DEFAULT)
-WIPE="NO"
+UNMOUNT="NO"
+FULLWIPE="NO"
+FULLBUILD="NO"
+BASEBUILD="NO"
+UPDATE_TUI="NO"
+UPDATE_CONFIG="NO"
 ENTER_CHROOT="NO"
 TARGET=""
 
 function about() {
   echo""  
-  echo "┌──────────────────────────────────────────┐"
-  echo "│ Arch Live on USB - Image Creator         │"
-  echo "│ ---------------------------------------- │"
-  echo "│ Author:   S. Reddy                       │"
-  echo "│ Version:  ${VERSION}                            │"
-  echo "│ ---------------------------------------- │"
-  echo "│ Purpose:  Swiss Army Knife with tui for  │"
-  echo "│           arch install, backup & tools   │"
-  echo "└──────────────────────────────────────────┘"
+  echo "┌──────────────────────────────────────────────────┐"
+  echo "│ Arch Live on USB - Image Creator                 │"
+  echo "│ ------------------------------------------------ │"
+  echo "│ Author:   S. Reddy                               │"
+  echo "│ Version:  ${VERSION}                                    │"
+  echo "│ ------------------------------------------------ │"
+  echo "│ Purpose:  Swiss Army Knife with tui for          │"
+  echo "│           arch install, backup & tools           │"
+  echo "└──────────────────────────────────────────────────┘"
   echo""
 }
 
 function usage() {
     
-  echo "┌──────────────────────────────────────────┐"
-  echo "Usage: $(basename $0) <options>"
+  echo "┌──────────────────────────────────────────────────┐"
+  echo "  USAGE: "
+  echo "    $(basename $0) [options]                   "
+  echo
+  echo "  OPTIONS:"
+  echo "   --fullbuild    build LiveCD on path </mnt/<sdX>"
+  echo "   --basebuild    build only a arch base system "
+  echo "   --fullwipe     wipe USB drive </mnt/<sdX>>"
+  echo "   --chroot       Enter chroot environment"
+  echo
+  echo "   -h, --help     This help dialog."
+  echo "└──────────────────────────────────────────────────┘"
   echo ""
-  echo "Options:"
-  echo "  --target <device-path> :"
-  echo "      Sets target drive /mnt/<sdX>"
-  echo ""
-  echo "  --fullwipe"
-  echo "      Wipe USB drive before building the LiveCD."
-  echo ""
-  echo "  --enter-chroot"
-  echo "      Starts a chroot environment after build."
-  echo ""
-  echo "  -h|--help"
-  echo "      This help dialog."
-  echo "└──────────────────────────────────────────┘"
-  echo ""
+}
+
+function version()
+{
+  echo "$APP"
+  echo "Version: ${VERSION}"
 }
 
 POSITIONAL=()
@@ -88,19 +87,52 @@ while [[ $# -gt 0 ]]
 do
     key="$1"
     case $key in
-        --target)
+        --fullbuild)
+            FULLBUILD="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --base-system)
+            BASEBUILD="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --update-tui)
+            UPDATE_TUI="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --update-config)
+            UPDATE_CONFIG="YES"
             TARGET="$2"
             shift
             shift
             ;;
         --fullwipe)
-            WIPE="YES"
+            FULLWIPE="YES"
+            TARGET="$2"
             shift
             ;;
-        --enter-chroot)
+        --chroot)
             ENTER_CHROOT="YES"
+            TARGET="$2"
+            shift
             shift
             ;;
+        --unmount)
+            UNMOUNT="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        --version)
+            version
+            exit 0
+            shift
+            ;;         
         -h|--help)
             about
             usage
@@ -109,7 +141,7 @@ do
             ;;
         *)    # unknown option
             POSITIONAL+=("$1") # save it in an array for later
-            echo "Unknown argument: ${POSITIONAL}"
+            echo "ERROR: Unknown argument: ${POSITIONAL}"
             usage
             exit 1
             shift
@@ -119,25 +151,21 @@ done
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
 
+
 # ===============================================
 # CHECKS
 # ===============================================
-# DEBUG OPTIONS:
-# -x = trace complete output
-# -e = if one command fails ==> stop script
-# -u = no undefined/empty variables allowed
-# -o pipefail = stop script if piping to another pipe fails
-[ $DEBUG  == true ] && set -x 
-[ $HELPER == true ] && set -eu && set -o pipefail
-
 # root check 
 [ $(whoami) != root ] && echo "You must be root!" && exit 1
 
 # check for empty target
-[ -z $TARGET ] && echo -e "You must specify a target. Determine the target USB device name with lsblk first!\n" && usage && exit 1
+#[ -z $TARGET ] && echo -e "You must specify a target. Determine the target USB device name with lsblk first!\n" && usage && exit 1
 
 # clean log 
-[ $LOG == true ] && rm $WORK/build.log
+[ $LOG == true ] && [ -f $LOGFILE ] && rm $LOGFILE
+
+
+
 
 # ===============================================
 # FUNCTIONS
@@ -178,8 +206,6 @@ function partioning()
   mkfs.ext4 -q ${TARGET}4 && log "Creating ${TARGET}4 fs done!"
 }
 
-
-
 function fullwipe()   # optional
 {
   log "Start full wipe ..."
@@ -187,7 +213,6 @@ function fullwipe()   # optional
   dd if=/dev/zero of=$TARGET status=progress && sync && log "Wiping done!"
   #dd if=/dev/zero of=$TARGET bs=16M status=progress && sync && log "==> Wiping done!"
 }
-
 
 #================ MOUNTING ===================#
 
@@ -203,6 +228,11 @@ function unmounting()
   if mountpoint -q $MNT; then
     log "==> $MNT is still mounted!"
     umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
+  fi
+
+  if mountpoint -q $MNT; then
+  log "==> $MNT is still mounted!"
+  umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
   fi
 
   log "==> Unmounting done!" && log ""
@@ -224,7 +254,6 @@ function mounting()
 }
 
 
-
 #================ BASE SYSTEM ===================#
 
 function basesystem()
@@ -234,8 +263,6 @@ function basesystem()
   log "==> Installing base system done!" && log ""
 }
 
-
-
 # Install Yay
 function install_yay()
 {
@@ -244,8 +271,6 @@ function install_yay()
   $CHROOT mkdir -p $PATH && cd $PATH && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
 }
 
-
-
 function fstabgen()
 {
   log "==> Generate a new /etc/fstab using UUIDs as source identifiers"
@@ -253,7 +278,11 @@ function fstabgen()
   log "==> Generating fstab done!" && log ""
 }
 
-#================ CONFIGURE ===================#
+
+
+#==============================================#
+# CONFIGURE
+#==============================================#
 
 function localecfg()
 {
@@ -270,6 +299,9 @@ function localecfg()
   $CHROOT sed -i 's/#de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/g' /etc/locale.gen
   $CHROOT locale-gen
   $CHROOT echo "LANG=de_DE.UTF-8" > /etc/locale.conf
+
+  $CHROOT ech "KEYMAP=de-latin1" > /etc/vconsole.conf
+
 }
 
 #================ USER-CFG ===================#
@@ -278,7 +310,7 @@ function hostcfg()
 {
   $CHROOT echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}" 
 
-cat <<EOF > ${MNT}/etc/fstab
+cat <<EOF > ${MNT}/etc/hosts
 127.0.0.1  localhost
 ::1        localhost
 127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}"
@@ -298,9 +330,9 @@ function bootloader()
 #grub-mkconfig -o /boot/grub/grub.cfg
 #EOF
 
-  $CHROOTCMD ${MNT} grub-install --force --target=i386-pc --recheck ${TARGET}
-  $CHROOTCMD ${MNT} grub-install --force --target=x86_64-efi --efi-directory /boot --recheck --removable
-  $CHROOTCMD ${MNT} grub-mkconfig -o /boot/grub/grub.cfg
+  $CHROOT grub-install --force --target=i386-pc --recheck ${TARGET}
+  $CHROOT grub-install --force --target=x86_64-efi --efi-directory /boot --recheck --removable
+  $CHROOT grub-mkconfig -o /boot/grub/grub.cfg
 }
 
 function newmkinitcpio()
@@ -391,34 +423,40 @@ function copytui()
   cp -rv ${WORK}/tui  /opt
   $CHROOT chown root  /opt/tui/*
   $CHROOT chmod +x    /opt/tui/*
+
+  cp -rv --parents ${WORK}/config/etc/systemd/system/getty@tty1.service.d \
+                    /etc/systemd/system/getty@tty1.service.d/autologin.conf      
 }
 
-function autostart()
+function automount()
 {
-log "create tui autostart on getty"
-
-
-cat <<EOF > ${MNT}/etc/fstab
+# automount 
+cat <<EOF > ${MNT}/etc/fstabF
 UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
 UUID=${UUID_DATAFS}  /data      vfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
 EOF
+}
 
+function tuiautostart()
+{
+log "create tui autostart on getty"
 # file: /etc/systemd/system/getty\@tty1.service.d/override.conf
 cat <<EOF > ${MNT}/etc/systemd/system/getty@tty1.service.d/autologin.conf
 [Service]
 ExecStart=
-ExecStart=-/usr/sbin/agetty --autologin root --login-program ${TUI} --noissue --noclear %I $TERM
+ExecStart=-/usr/sbin/agetty --autologin root --login-program /root/tui/menu.sh --mode service --noissue --noclear %I $TERM
 EOF
 
 log "tui getty autostart done!" && log ""
 }
 
-$CHROOT locale-gen de_DE.UTF-8
+
+
 
 # ===========================
-# MAIN
+# MAIN FUNCTIONS
 # ===========================
-img_fullbuild()
+_buildbasesys()
 {
   about
   log "Starting build $(date +"%D %T")"
@@ -433,26 +471,9 @@ img_fullbuild()
   basesystem
   install_yay
   fstabgen
-
-  ### config ###
-  localecfg
-  hostcfg
-
-  # Hint: guess bootloader is here cuz of locales
-  bootloader
-
-  networkcfg
-  networkenable
-
-  rootpwcfg
-  wheelgrpcfg
-
-  #sudocfg #TODO: dont works
-  copytui
-  autostart
 }
 
-img_updatecfg()
+_configure()
 {
   ### fresh mount ###
   unmounting
@@ -462,6 +483,8 @@ img_updatecfg()
   localecfg
   hostcfg
 
+  $CHROOT locale-gen de_DE.UTF-8
+
   networkcfg
   networkenable
 
@@ -470,15 +493,71 @@ img_updatecfg()
 
   #sudocfg #TODO: dont works
   copytui
-  autostart
+  #automount
+  #tuiautostart
+}
+
+fullbuild()
+{
+  _buildbasesys
+  _configure
+}
+
+basebuild()
+{
+  _buildbasesys
+}
+
+updatecfg()
+{
+  _configure
+}
+
+function enter_chroot()
+{
+  unmounting && mounting ${TARGET}3
+  $CHROOTCMD $MNT
 }
 
 
-#if [ "${ENTER_CHROOT}" = "YES" ]
-#then
-#    log "Enter chroot ..."
-#    $CHROOTCMD $MNT
-#fi
 
-log "=================================="
-log "IMG BUILD DONE!"
+# ============================================= #
+#  MAIN
+# ============================================= #
+
+if [ ! -z $TARGET ]; then 
+
+  if [ $UNMOUNT == "YES" ]; then
+    umount -A ${TARGET}* && umount ${TARGET}* && lsblk
+  fi
+
+  if [ $FULLWIPE == "YES" ]; then
+    fullwipe
+  fi
+
+  if [ $FULLBUILD == "YES" ]; then
+    log "Build full image ..." && fullbuild
+  fi
+
+  if [ $BASEBUILD == "YES" ]; then
+    log "Build full image ..." && basebuild
+  fi
+
+  if [ $UPDATE_TUI == "YES" ]; then
+      mounting $TARGET && cp -rv tui /mnt/usb/root/tui
+  fi
+
+  if [ $UPDATE_CONFIG == "YES" ]; then
+      mounting $TARGET && updatecfg && log "Config is up to date!"
+  fi
+
+  if [ $ENTER_CHROOT == "YES" ]; then
+      enter_chroot
+  fi
+
+  log "=================================="
+  log "DONE!"
+
+else
+  log "You must specify a argument with target!"
+fi

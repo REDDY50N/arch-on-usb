@@ -31,7 +31,8 @@ This page explains how to install Arch Linux on a USB flash drive. The end resul
 The only packages explicitly installed besides linux, linux-firmware, and base are: efibootmgr, grub, iwd, polkit, sudo, and vim
 
 Basic services all handled by systemd.
-Install Base System
+
+# 2. Install Base System
 
 Determine the target USB device name:
 lsblk
@@ -78,14 +79,16 @@ fstab
 
 Generate a new /etc/fstab using UUIDs as source identifiers:
 genfstab -U /mnt/usb > /mnt/usb/etc/fstab
-Configure Base System
+
+# 3. Configure Base System
 
 ## Configure (chroot)
 All configuration is done within a chroot. Chroot into the new system:
 arch-chroot /mnt/usb
 
 Exit the chroot environment when finished by typing exit.
-locale
+
+## Locale
 
 Use tab-completion to discover the appropriate entries for region and city:
 ln -sf /usr/share/zoneinfo/region/city /etc/localtime
@@ -100,8 +103,10 @@ Generate the locale information:
 locale-gen
 
 Set the LANG variable in /etc/locale.conf (for US English, localeline is en_US.UTF-8):
-echo LANG=localeline > /etc/locale.conf
-hostname
+echo LANG=<localeline> > /etc/locale.conf
+
+
+## Hostname
 
 Create a /etc/hostname file containing the desired hostname on a single line:
 echo hostname > /etc/hostname
@@ -113,11 +118,12 @@ vim /etc/hosts
 ::1        localhost
 127.0.1.1  hostname.localdomain  hostname
 
-password
+## Password
 
 Set the root password:
 passwd
-bootloader
+
+## Bootloader
 
 Install grub and efibootmgr:
 pacman -S grub efibootmgr
@@ -128,8 +134,8 @@ grub-install --target=x86_64-efi --efi-directory /boot --recheck --removable
 
 Generate a GRUB configuration:
 grub-mkconfig -o /boot/grub/grub.cfg
-networking
 
+## Networking
 Create a networkd configuration file with the following content to automatically establish wired connections:
 vim /etc/systemd/network/10-ethernet.network
 
@@ -176,7 +182,8 @@ ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
 Enable timesyncd:
 systemctl enable systemd-timesyncd.service
-user
+
+## User
 
 Create a new user account and set its password:
 useradd -m user
@@ -185,7 +192,8 @@ passwd user
 Ensure the wheel group exists and add user to it:
 groupadd wheel
 usermod -aG wheel user
-sudo
+
+## sudo
 
 Install sudo:
 pacman -S sudo
@@ -196,6 +204,8 @@ EDITOR=vim visudo /etc/sudoers.d/10-sudo %sudo ALL=(ALL) ALL
 Ensure the sudo group exists and add user to it:
 groupadd sudo
 usermod -aG sudo user
+
+# 4. Optional
 
 Install polkit to allow various commands (reboot and shutdown, among others) to be run by non-root users:
 pacman -S polkit

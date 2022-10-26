@@ -454,11 +454,11 @@ img_updatecfg()
 }
 
 
-#if [ "${ENTER_CHROOT}" = "YES" ]
-#then
-#    log "Enter chroot ..."
-#    $CHROOTCMD $MNT
-#fi
+if [ "${ENTER_CHROOT}" = "YES" ]
+then
+    log "Enter chroot ..."
+    $CHROOTCMD $MNT
+fi
 
 log "=================================="
 log "IMG BUILD DONE!"

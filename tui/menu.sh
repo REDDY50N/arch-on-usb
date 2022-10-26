@@ -190,11 +190,10 @@ function main()
         do
         case $CHOICE in
         1)
-            #/bin/bash tui/flash.sh && main
-            flash && main
+            mount_home && flash_sda && main
             ;;
         2)
-            clone && main
+            unmount && mount_home && clone_sda && main
             ;;
         3)
             tools

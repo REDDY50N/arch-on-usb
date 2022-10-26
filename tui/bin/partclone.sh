@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source $(dirname "$0")/helpers.sh
+source $(dirname "$0")/filebrowser.sh
 
 # image repo 
 function mount_sdb4()
@@ -17,39 +19,21 @@ function clone_sda2()
     FROM=/dev/sda2
     TO=/mnt/usb/nprohd_sda2_$(date +%F_%H-%M-%S).img
     log "Cloning $FROM to $TO ..."
-    partclone.ext4 -N -d -c -s $FROM -o $TO && \
+    #partclone.ext4 -N -d -c -s $FROM -o $TO && \
     partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO
     log "Cloning $FROM to $TO succesful."
 }
 
 function flash_sda2()
 {
-    selectimg
-    FROM=_IMG #sda2.img # TODO: whiptail filebrowser
+    FROM=$(selectimg) #sda2.img # TODO: whiptail filebrowser
     TO=/dev/sda2
     log "Restore $FROM to $TO ..."
     partclone.ext4 -d -r -s sda2.img -o /dev/sda2 && \
     log "Restoring $FROM to $TO succesful."
 }
 
-function selectimg()
-{
-    _IMG=""
 
-    filebrowser "Select a image to flash" "$STARTDIR"
-
-    exitstatus=$?
-    if [ $exitstatus == 0 ]; then
-        if [ "$selection" == "" ]; then
-            [[ "$exitstatus" == 1 ]] && main
-        else
-            _IMG=$selection
-            log "Image selected: $selection => IMG: $_IMG"
-        fi
-    else
-        errorbox "Error selecting flash image!" && main
-    fi
-}
 
 
 function clone_sda2()
@@ -79,3 +63,41 @@ function testflash()
     (gunzip -c "$FROM" | pv -n > $TO ) 2>&1 | whiptail --gauge "Clone image ..." 10 ${WIDTH} 0 \
         || errorbox "Flashing failed! \nTried to flash $FROM as $TO"    
 }
+
+
+
+function selectimg()
+{
+    #local STARTDIR=/mnt/usb
+    STARTDIR="$HOME/Code"
+    _IMG=""
+
+    filebrowser "Select a image to flash" "$STARTDIR"
+
+    exitstatus=$?
+    if [ $exitstatus == 0 ]; then
+        if [ "$selection" == "" ]; then
+            [[ "$exitstatus" == 1 ]] && main
+        else
+            _IMG=$selection
+            log "Image selected: $selection => IMG: $_IMG"
+        fi
+    else
+        errorbox "Error selecting flash image!" && main
+    fi
+}
+
+
+
+test_selectimg()
+{
+    FROM=$(selectimg) #sda2.img # TODO: whiptail filebrowser
+    echo $FROM
+    TO=/xxx
+    log "Restore $FROM to $TO ..."
+    log "Restoring $FROM to $TO succesful."
+}
+
+
+
+test_selectimg
