@@ -12,15 +12,16 @@ LOG=true
 # ===============================================
 WORK="$(dirname $(readlink -f $0))"
 LOGFILE="$WORK/build.log"
-source $WORK/version
+source ${WORK}/version
 
-MNT="/mnt/usb"
+MNT="/mnt/archrootfs"
 BOOT="/mnt/usb/boot"
+ROOTFS="$MNT"
 
 PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
 
-CHROOT="arch-chroot /mnt/usb"
-CHROOTCMD="arch-chroot"
+CHROOT="arch-chroot ${ROOTFS}"
+CHROOTCMD="arch-chroot ${MNT}"
 
 HOSTNAME=superman
 USER=polar
@@ -46,7 +47,7 @@ function about() {
   echo "│ Arch Live on USB - Image Creator                 │"
   echo "│ ------------------------------------------------ │"
   echo "│ Author:   S. Reddy                               │"
-  echo "│ Version:  ${VERSION}                                    │"
+  echo "│ Version:  ${ARCH_VERSION}                                    │"
   echo "│ ------------------------------------------------ │"
   echo "│ Purpose:  Swiss Army Knife with tui for          │"
   echo "│           arch install, backup & tools           │"
@@ -200,30 +201,36 @@ function err()
 
 #================ PARTITIONING ===================#
 function partioning()
-{  
-  log "Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files"
+{ 
+  lognl "Partioning ..." 
+  #Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files
   sgdisk -Z ${TARGET}
-  sgdisk -o -n 1:0:+10M -t 1:EF02 -n 2:0:+500M -t 2:EF00 -n 3:0:+3G -t 3:8300 -n 4:0:0 -t 4:8300 $TARGET
+  sgdisk -o -n 1:0:+10M   -t 1:EF02 \
+  #          -n 2:0:+500M  -t 2:EF00 \
+            -n 2:0:+3G    -t 2:8300 \
+            -n 3:0:0      -t 3:8300 \
+            ${TARGET}
 
+  #wipefs -a ${TARGET}2
   wipefs -a ${TARGET}2
   wipefs -a ${TARGET}3
-  wipefs -a ${TARGET}4
 
+  lognl "Formating ..."
   # Hint: Do not format the /dev/sdX1 block. This is the BIOS/MBR parition."
 
   # Format the 500MB EFI system partition with a FAT32 filesystem:
-  mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
+  #mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
 
   # Format the Linux partition with an ext4 filesystem:
-  mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
+  mkfs.ext4 -q ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
 
   # Format the data partition with an exfat/ntfs filesystem:
-  mkfs.ext4 -q ${TARGET}4 && log "Creating ${TARGET}4 fs done!"
+  mkfs.exfat -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
 }
 
 function fullwipe()   # optional
 {
-  log "Start full wipe ..."
+  lognl "Full wipe ..."
   log "This may take long time depending on disk size (1 hour+)"
   dd if=/dev/zero of=$TARGET status=progress && sync && log "Wiping done!"
   #dd if=/dev/zero of=$TARGET bs=16M status=progress && sync && log "==> Wiping done!"
@@ -233,39 +240,21 @@ function fullwipe()   # optional
 
 function unmounting()
 {
-  log "==> Unmount first ..."
-
-  if mountpoint -q $BOOT; then
-    log "==> $BOOT is still mounted!"
-    umount $BOOT && log "Unmount $BOOT sucessfull!" || error "Failed to unmount $BOOT" 
-  fi
-  
-  if mountpoint -q $MNT; then
-    log "==> $MNT is still mounted!"
-    umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
-  fi
-
-  if mountpoint -q $MNT; then
-  log "==> $MNT is still mounted!"
-  umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
-  fi
-
-  log "==> Unmounting done!" && log ""
+  lognl "Unmount ..."
+  mountpoint -q $MNT && umount -A ${TARGET}* || log "No device mounted!"
 }
 
 function mounting()
 {
-  log "==> Start mounting ..."
+  lognl "Mounting ..."
   
-  log "==> Mount the ext4 formatted partition as the root filesystem"
   mkdir -p "$MNT" && log "Creating mountpoint $MNT done!"
-  mount ${TARGET}3 $MNT && log "Mounting ${TARGET}3 on $MNT done!" || error "Mounting ${TARGET}3 on $MNT failed!"
+  mount ${TARGET}2 $MNT && log "Mounting ${TARGET}2 on $MNT done!" || error "Mounting ${TARGET}3 on $MNT failed!"
 
-  log "==> Mount the FAT32 formatted EFI partition to /boot"
-  mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
-  mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BOOT failed! ==> Hint: Reboot if mount fails due to unknow filesystem type »vfat«!"
+  #log "==> Mount the FAT32 formatted EFI partition to /boot"
+  #mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
+  #mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BOOT failed! ==> Hint: Reboot if mount fails due to unknow filesystem type »vfat«!"
 
-  log "==> Mounting done!" && log ""
 }
 
 
@@ -273,9 +262,10 @@ function mounting()
 
 function basesystem()
 {
-  log "==> Download and install the Arch Linux base packages using pacstrap."
+  lognl "Install base system ..."
+  # download and install the Arch Linux base packages using pacstrap.
   pacstrap $MNT $PACKAGES && \
-  log "==> Installing base system done!" && log ""
+  log "==> base system installed!" && log ""
 }
 
 # Install Yay

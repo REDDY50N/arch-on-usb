@@ -12,24 +12,23 @@ LOG=true
 # ===============================================
 WORK="$(dirname $(readlink -f $0))"
 LOGFILE="$WORK/build.log"
-source $WORK/version
+source ${WORK}/version
 
 MNT="/mnt/rootfs"
 ROOTFS="$MNT"
-BOOT="$MNT/boot"
+CHROOT="chroot $MNT"
 
-PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
-PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages-debian.txt)
-
-CHROOT="arch-chroot /mnt/usb"
-CHROOTCMD="arch-chroot"
+PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages-ubuntu.txt)
 
 HOSTNAME=superman
 USER=polar
 ROOTPW="evis32"
 
-STRAPCMD="pacstrap $MNT $PACKAGES" 
-STRAPCMD="debootstrap --include '$PACKAGES' --arch amd64 bullseye ${MNT}"
+#STRAPCMD="pacstrap $MNT $PACKAGES" 
+#STRAPCMD="debootstrap --include '$PACKAGES' --arch amd64 bullseye ${MNT}"
+
+REPO_URL="http://de.archive.ubuntu.com/ubuntu"
+REPO_URL_ARM="http://ports.ubuntu.com" #"http://ports.ubuntu.com/ubuntu-ports"
 
 # ===============================================
 # CLI INTERFACE
@@ -43,6 +42,7 @@ BASEBUILD="NO"
 UPDATE_TUI="NO"
 UPDATE_CONFIG="NO"
 ENTER_CHROOT="NO"
+NOPART="NO"
 TARGET=""
 
 function about() 
@@ -68,8 +68,9 @@ function usage()
   echo "    $(basename $0) [options] [target]               "
   echo
   echo "  OPTIONS:"
-  echo "   -f, --fullbuild    build to target </mnt/<sdX>"
-  echo "   -b, --basebuild    build to target </mnt/<sdX>"
+  echo "   -f, --fullbuild    build complete system"
+  echo "   -b, --basebuild    build only base system"
+  echo "   -n, --nopart       build on existing partitions"
   echo "   -w, --fullwipe     wipe USB drive  </mnt/<sdX>"
   echo "   -c, --chroot       enter chroot    </mnt/<sdX>"
   echo
@@ -78,6 +79,9 @@ function usage()
   echo
   echo "   -v, --version      Show $(basename $0) version"
   echo "   -h, --help         This help dialog"
+  echo 
+  echo "  EXAMPLE:"
+  echo "   $(basename $0) --fullbild </mnt/sdX>"
   echo "└──────────────────────────────────────────────────┘"
   echo ""
 }
@@ -100,6 +104,12 @@ do
             ;;
         -b|--base-system)
             BASEBUILD="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
+        -n|--nopart)
+            NOPART="YES"
             TARGET="$2"
             shift
             shift
@@ -262,34 +272,61 @@ function fullwipe()   # optional
 }
 
 #================ BASE SYSTEM ===================#
-
 function basesystem()
 {
   lognl "Install base system ..."
-  $STRAPCMD && log "==> Base system installed!" && log ""
+  
+  # use debootstrap from from arch linux host !
+  debootstrap --no-check-gpg --arch=amd64 focal ${ROOTFS} http://de.archive.ubuntu.com/ubuntu    
 }
-
 
 #==============================================#
 # CONFIGURE
 #==============================================#
-
-function config_full()
+function copy_mtab()
 {
   # currently mounted filesystems
   cp -v /etc/mtab ${ROOTFS}/etc/mtab
+}
 
-  # mount virtual filesystems
+mount_dev_proc_sys()
+{
+  lognl "Mount /dev /proc /sys"
+    # mount virtual filesystems
   # arch does this automatically
   mount -o bind /dev      ${MNT}/dev
   mount -o bind /dev/pts  ${MNT}/dev/pts
   mount -o bind /proc     ${MNT}/proc
   mount -o bind /sys      ${MNT}/sys
-
-  #chroot ${MNT} apt install arch-install-scripts
-
-  fstabgen
 }
+
+function editpkglist()
+{
+  # default: deb http://de.archive.ubuntu.com/ubuntu focal main
+  REPO=focal
+  REPO_URL="http://de.archive.ubuntu.com/ubuntu"
+  REPO_COMPONENTS="main universe multiverse"
+  echo "" > "${ROOTFS}/etc/apt/sources.list"
+  echo "deb ${REPO_URL} ${REPO} ${REPO_COMPONENTS}" >> "${ROOTFS_PATH}/etc/apt/sources.list"
+}
+
+function update()
+{
+  chroot ${ROOTFS} apt update
+  chroot ${ROOTFS} apt -y install software-properties-common
+  
+  # software-properties-common
+  # no need to add/remove repositories (such as PPAs) manually by editing /etc/apt/sources.list 
+  #   dpkg -L software-properties-common | grep 'bin/'
+  #   /usr/bin/add-apt-repository
+  #   /usr/bin/apt-add-repository
+}
+
+function installpkg()
+{
+  chroot ${MNT} apt install -y $PACKAGES
+}
+
 
 function fstabgen()
 {
@@ -304,14 +341,13 @@ function fstabgen()
 function localecfg()
 {
   lognl "Configure time ..."
-  chroot ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime && log "==> Set timezone !" || err "Failed to set timezone!"
-  chroot hwclock --systohc && log "==> Generate /etc/adjtime (hwclock)" || err "Failed to set /etc/adjtime!"
-
+  chroot ${ROOTFS} ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime && log "==> Set timezone !" || err "Failed to set timezone!"
+  chroot ${ROOTFS} hwclock --systohc && log "==> Generate /etc/adjtime (hwclock)" || err "Failed to set /etc/adjtime!"
+  
   lognl "Configure language & keyboard ..."
-  $CHROOT sed -i 's/#de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/g' /etc/locale.gen
-  chroot locale-gen
-  chroot echo "LANG=de_DE.UTF-8" > /etc/locale.conf
-  chroot echo "KEYMAP=de-latin1" > /etc/vconsole.conf
+  chroot ${ROOTFS} locale-gen de_DE.UTF-8
+
+  #chroot echo "KEYMAP=de-latin1" > /etc/vconsole.conf
 }
 
 #================ USER-CFG ===================#
@@ -319,7 +355,7 @@ function localecfg()
 function hostcfg()
 {
   lognl "Configure hostname & hosts ..."
-  chroot echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}" || err "Failed to set hostname!"
+  echo ${HOSTNAME} > ${ROOTFS}/etc/hostname && log "==> Set hostname to ${HOSTNAME}" || err "Failed to set hostname!"
 
 cat <<EOF > ${ROOTFS}/etc/hosts
 127.0.0.1  localhost
@@ -333,16 +369,9 @@ EOF
 
 #================ BOOTLAODER ===================#
 
-function arch_bootloader()
+function efi_bootloader()
 {
-  lognl "Install Bootloader"
-#cat << EOF | $CHROOT
-#grub-install --target=i386-pc --recheck ${TARGET} && \
-#grub-install --target=x86_64-efi --efi-directory /boot --recheck --removable && \
-#grub-mkconfig -o /boot/grub/grub.cfg
-#EOF
-
-  $CHROOT grub-install --force --target=i386-pc --recheck ${TARGET}
+  #$CHROOT grub-install --force --target=i386-pc --recheck ${TARGET}
   $CHROOT grub-install --force --target=x86_64-efi --efi-directory /boot --recheck --removable
   $CHROOT grub-mkconfig -o /boot/grub/grub.cfg
 }
@@ -357,7 +386,7 @@ function bootloader()
 
 function newmkinitcpio()
 {
- echo "TODO"
+  echo "TODO"
 }
 
 #================ END::BOOTLAODER ===================#
@@ -523,22 +552,6 @@ _configure()
   #tuiautostart
 }
 
-fullbuild()
-{
-  _buildbasesys
-  _configure
-}
-
-basebuild()
-{
-  _buildbasesys
-}
-
-updatecfg()
-{
-  _configure
-}
-
 
 
 # ============================================= #
@@ -548,12 +561,27 @@ function fullbuild()
 { 
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
   _buildbasesys
-
-
-
+  _configure
 }
 
+basebuild()
+{
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
+  _buildbasesys
+}
 
+updatebuild()
+{
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
+
+  about
+  log "Starting build $(date +"%D %T")" && log ""
+  sleep 2
+
+  basesystem
+  config_full
+  bootloader
+}
 
 
 function update_tui()
@@ -567,13 +595,13 @@ function update_config()
 { 
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
   unmounting && mounting ${TARGET}2 && \
-  updatecfg && log "Config is up to date!" || err "Failed to update config!"
+  _configure && log "Config is up to date!" || err "Failed to update config!"
 }
 
 function enter_chroot()
 { 
   [ -z ${TARGET} ] && log "You must specify a target!" && usage && exit 1
-  unmounting && mounting && chroot $ROOTFS
+  unmounting && mounting && chroot $ROOTFS /bin/bash
 }
 
 
@@ -602,16 +630,20 @@ if [ ! -z $TARGET ]; then
     basebuild
   fi
 
+  if [ $NOPART == "YES" ]; then
+    updatebuild
+  fi
+
   if [ $UPDATE_TUI == "YES" ]; then
     update_tui
   fi
 
   if [ $UPDATE_CONFIG == "YES" ]; then
-     update_config 
+    update_config 
   fi
 
   if [ $ENTER_CHROOT == "YES" ]; then
-      enter_chroot
+    enter_chroot
   fi
 
   log "=================================="
