@@ -193,7 +193,7 @@ function lognl()
 {
 	echo
 	echo "=========================================="
-	echo "STEP: $1"
+	echo " STEP: $1"
 	echo "=========================================="
 }
 
@@ -230,6 +230,12 @@ function unmounting()
   log "==> Unmounting done!" && log ""
 }
 
+function unmountall()
+{
+  lognl "Unmount ..."
+  mountpoint -q $MNT && umount -A ${TARGET}* || log "No device mounted!"
+}
+
 function mounting()
 {
   lognl "Mounting ..."
@@ -245,8 +251,8 @@ function partioning()
   log "Clear partion data and create new partion table!"
   sgdisk -Z ${TARGET}
   sgdisk -o -n 1:0:+10M   -t 1:EF02 \
-            -n 2:0:+3G    -t 3:8300 \
-            -n 3:0:0      -t 4:8300 \
+            -n 2:0:+3G    -t 2:8300 \
+            -n 3:0:0      -t 3:8300 \
             ${TARGET}
 
   log "Wipe ${TARGET}"
@@ -469,7 +475,7 @@ log "tui getty autostart done!" && log ""
 _buildbasesys()
 {
   about
-  log "Starting build $(date +"%D %T")"
+  lognl "Starting build $(date +"%D %T")"
   sleep 2
 
   ### prepare ###
@@ -479,8 +485,16 @@ _buildbasesys()
 
   ### base system ###
   basesystem
-  install_yay
+
+  ### config 1 ###
   fstabgen
+  localecfg
+  hostcfg
+
+  ### bootloader ###
+  bootloader
+
+  ### config 2 ###
 }
 
 _configure()
@@ -528,16 +542,11 @@ updatecfg()
 # ============================================= #
 #  CLI CALL FUNCTIONS
 # ============================================= #
-target_check()
-{
-  [ -z ${TARGET} ] && log "You must specify a target!" && \
-  usage && exit 1
-}
-
-
 function fullbuild()
 { 
-  target_check
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
+  _buildbasesys
+
 
 
 }
@@ -561,7 +570,8 @@ function update_config()
 
 function enter_chroot()
 { 
-  target_check && unmounting && mounting && chroot $ROOTFS
+  [ -z ${TARGET} ] && log "You must specify a target!" && usage && exit 1
+  unmounting && mounting && chroot $ROOTFS
 }
 
 
@@ -575,7 +585,7 @@ function enter_chroot()
 if [ ! -z $TARGET ]; then 
 
   if [ $UNMOUNT == "YES" ]; then
-    umount -A ${TARGET}* && umount ${TARGET}* && lsblk
+    unmountall
   fi
 
   if [ $FULLWIPE == "YES" ]; then
@@ -603,7 +613,7 @@ if [ ! -z $TARGET ]; then
   fi
 
   log "=================================="
-  log "DONE!"
+  log "SUCCESS!"
 
 else
   log "You must specify a argument with target!"
