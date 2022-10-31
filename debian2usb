@@ -29,7 +29,7 @@ USER=polar
 ROOTPW="evis32"
 
 STRAPCMD="pacstrap $MNT $PACKAGES" 
-STRAPCMD="debootstrap --include $PACKAGES --arch amd64 bullseye /mnt/usb"
+STRAPCMD="debootstrap --include '$PACKAGES' --arch amd64 bullseye ${MNT}"
 
 # ===============================================
 # CLI INTERFACE
@@ -211,23 +211,7 @@ function err()
 function unmounting()
 {
   lognl "Unmount ..."
-
-  if mountpoint -q $BOOT; then
-    log "==> $BOOT is still mounted!"
-    umount $BOOT && log "Unmount $BOOT sucessfull!" || error "Failed to unmount $BOOT" 
-  fi
-  
-  if mountpoint -q $MNT; then
-    log "==> $MNT is still mounted!"
-    umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
-  fi
-
-  if mountpoint -q $MNT; then
-  log "==> $MNT is still mounted!"
-  umount $MNT && log "Unmount $MNT successful!" || error "Failed to unmount $MNT"
-  fi
-
-  log "==> Unmounting done!" && log ""
+  mountpoint -q $MNT && umount -A ${TARGET}* || log "No device mounted!"
 }
 
 function unmountall()
@@ -289,6 +273,23 @@ function basesystem()
 #==============================================#
 # CONFIGURE
 #==============================================#
+
+function config_full()
+{
+  # currently mounted filesystems
+  cp -v /etc/mtab ${ROOTFS}/etc/mtab
+
+  # mount virtual filesystems
+  # arch does this automatically
+  mount -o bind /dev      ${MNT}/dev
+  mount -o bind /dev/pts  ${MNT}/dev/pts
+  mount -o bind /proc     ${MNT}/proc
+  mount -o bind /sys      ${MNT}/sys
+
+  #chroot ${MNT} apt install arch-install-scripts
+
+  fstabgen
+}
 
 function fstabgen()
 {
@@ -479,17 +480,18 @@ _buildbasesys()
   sleep 2
 
   ### prepare ###
-  unmounting
+  unmountall
   partioning
   mounting
 
   ### base system ###
   basesystem
+  config_full
 
   ### config 1 ###
-  fstabgen
-  localecfg
-  hostcfg
+  #fstabgen
+  #localecfg
+  #hostcfg
 
   ### bootloader ###
   bootloader
@@ -500,7 +502,7 @@ _buildbasesys()
 _configure()
 {
   ### fresh mount ###
-  unmounting
+  unmountall
   mounting
 
 

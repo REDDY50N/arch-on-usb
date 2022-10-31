@@ -3,29 +3,4 @@ grub
 locales
 
 
-#apt
-#tmux
-#zsh
-#fd
-#exa 
-#bat
-#ncdu
-#ripgrep
-#fzf
-#neovim
-#git
-#tig
-#ranger
-#xarchiver
-#htop
-#udisks
-#networkmanager
-#dnsutils
-#docker.io
-#rustup
-#wget
-#ssh
-
-
-
 
