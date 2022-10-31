@@ -5,23 +5,19 @@
 set -e # stop if one command fails
 set -u # no undefined/empty variables allowed
 set -o pipefail # stop if one pipe fails
-
-# INCLUDES
-source $(dirname "$0")/version
-
-# Script that contains the needed variables
-CONFIG_SCRIPT="config.sh"
-
-# LOGS
 LOG=true
-LOGFILE=$(dirname "$0")/build.log
 
 # ===============================================
 # VARIABLES
 # ===============================================
 WORK="$(dirname $(readlink -f $0))"
+LOGFILE="$WORK/build.log"
+source $WORK/version
+
 MNT="/mnt/usb"
 BOOT="/mnt/usb/boot"
+
+PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
 
 CHROOT="arch-chroot /mnt/usb"
 CHROOTCMD="arch-chroot"
@@ -29,39 +25,6 @@ CHROOTCMD="arch-chroot"
 HOSTNAME=superman
 USER=polar
 ROOTPW="evis32"
-
-# read packages from file
-PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
-
-#================ LOAD CONFIG ===================#
-function GetVars()
-{
-	# Check for args
-	#if [ ${#SDCARD} == 0 ]; then
-  if [ ${#TAREGT} == 0 ]; then
-		err "No SD Card specified"
-	fi
-  
-	if [ ! -e "${CONFIG_SCRIPT}" ]; then
-		err "Failed to find config script - Exiting..."
-	fi
-
-	BOOT_BLOCK_DEV="${SDCARD}1"
-	ROOTFS_BLOCK_DEV="${SDCARD}2"
-	BASE=$(./${CONFIG_SCRIPT} BASE) || Exit "Failed to parse base directory"
-	DEBOOTSTRAP_TAR=$(./${CONFIG_SCRIPT} DEBOOTSTRAP_TAR) || Exit "Failed to parse debootstrap tar filename"
-	DEBOOTSTRAP=$(./${CONFIG_SCRIPT} DEBOOTSTRAP) || Exit "Failed to parse debootstrap directory"
-	TMP=$(./${CONFIG_SCRIPT} TMP) || Exit "Failed to parse temp directory"
-	MODULES_TMP=$(./${CONFIG_SCRIPT} MODULES_TMP) || Exit "Failed to get modules temp directory"
-	BOOT_TMP=$(./${CONFIG_SCRIPT} BOOT_TMP) || Exit "Failed to get boot files"
-	BOOT_PARTITION_MOUNT=$(./${CONFIG_SCRIPT} BOOT_PARTITION_MOUNT) || Exit "Failed to parse boot partition mount directory"
-	ROOTFS_PARTITION_MOUNT=$(./${CONFIG_SCRIPT} ROOTFS_PARTITION_MOUNT) || Exit "Failed to parse rootfs partition mount directory"
-	BOOT_DISK_LABEL=$(./${CONFIG_SCRIPT} BOOT_DISK_LABEL) || Exit "Failed to parse boot disk label"
-	ROOTFS_DISK_LABEL=$(./${CONFIG_SCRIPT} ROOTFS_DISK_LABEL) || Exit "Failed to parse rootfs disk label"
-	FIRMWARE_DEST=$(./${CONFIG_SCRIPT} FIRMWARE_DEST) || Exit "Failed to get firmware location"
-}
-
-
 
 # ===============================================
 # CLI INTERFACE
@@ -80,10 +43,10 @@ TARGET=""
 function about() {
   echo""  
   echo "┌──────────────────────────────────────────────────┐"
-  echo "│ Arch Live on USB - Image Creator                 │"
+  echo "│ Debian Live on USB - Image Creator               │"
   echo "│ ------------------------------------------------ │"
   echo "│ Author:   S. Reddy                               │"
-  echo "│ Version:  ${VERSION}                                    │"
+  echo "│ Version:  ${DEBIAN_VERSION}                                    │"
   echo "│ ------------------------------------------------ │"
   echo "│ Purpose:  Swiss Army Knife with tui for          │"
   echo "│           arch install, backup & tools           │"
@@ -111,8 +74,8 @@ function usage() {
 
 function version()
 {
-  echo "$APP"
-  echo "Version: ${VERSION}"
+  echo "$(basename $0)"
+  echo "Version: ${DEBIAN_VERSION}"
 }
 
 POSITIONAL=()
