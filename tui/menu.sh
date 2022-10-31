@@ -1,14 +1,6 @@
 #!/bin/bash
 
-### Purpose: ###
-# This is a simple tui menu for flashing compressed dd images
-# to Geshem Box PCs. The tui menu is made with whitail.
 
-### Whiptail Docs: ###
-# https://linux.die.net/man/1/whiptail
-# https://en.wikibooks.org/wiki/Bash_Shell_Scripting/Whiptail
-# https://github.com/simudream/Whiptail-demo
-# https://www.dev-insider.de/dialogboxen-mit-whiptail-erstellen-a-860990/
 
 # uncomment for debugging
 #set -x  # print all
@@ -17,12 +9,17 @@ set -u  # treat undefined vars as erros
 set -o pipefail
 
 
+
+
 # ===========================
 # INCLUDE SCRIPTS / FILES
 # ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
 
-source $(dirname "$0")/bin/*
+source $(dirname "$0")/bin/clone
+source $(dirname "$0")/bin/flash
+source $(dirname "$0")/bin/helpers.sh
+source $(dirname "$0")/bin/filebrowser.sh
 
 # tui help files
 HELPFILE_SERVICE=${SCRIPTDIR}/help/help4service
@@ -108,6 +105,7 @@ export NEWT_COLORS=$REDBLUE
         esac
     done
     set -- "${POSITIONAL[@]}" # restore positional parameters
+
 
 # ===========================
 # MAIN MENU

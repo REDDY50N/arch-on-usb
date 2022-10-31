@@ -1,1 +1,6 @@
 *.log
+temp/
+tmp/
+*tmp/*
+TODO.md
+

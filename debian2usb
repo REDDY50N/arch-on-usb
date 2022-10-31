@@ -9,6 +9,9 @@ set -o pipefail # stop if one pipe fails
 # INCLUDES
 source $(dirname "$0")/version
 
+# Script that contains the needed variables
+CONFIG_SCRIPT="config.sh"
+
 # LOGS
 LOG=true
 LOGFILE=$(dirname "$0")/build.log
@@ -29,6 +32,35 @@ ROOTPW="evis32"
 
 # read packages from file
 PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
+
+#================ LOAD CONFIG ===================#
+function GetVars()
+{
+	# Check for args
+	#if [ ${#SDCARD} == 0 ]; then
+  if [ ${#TAREGT} == 0 ]; then
+		err "No SD Card specified"
+	fi
+  
+	if [ ! -e "${CONFIG_SCRIPT}" ]; then
+		err "Failed to find config script - Exiting..."
+	fi
+
+	BOOT_BLOCK_DEV="${SDCARD}1"
+	ROOTFS_BLOCK_DEV="${SDCARD}2"
+	BASE=$(./${CONFIG_SCRIPT} BASE) || Exit "Failed to parse base directory"
+	DEBOOTSTRAP_TAR=$(./${CONFIG_SCRIPT} DEBOOTSTRAP_TAR) || Exit "Failed to parse debootstrap tar filename"
+	DEBOOTSTRAP=$(./${CONFIG_SCRIPT} DEBOOTSTRAP) || Exit "Failed to parse debootstrap directory"
+	TMP=$(./${CONFIG_SCRIPT} TMP) || Exit "Failed to parse temp directory"
+	MODULES_TMP=$(./${CONFIG_SCRIPT} MODULES_TMP) || Exit "Failed to get modules temp directory"
+	BOOT_TMP=$(./${CONFIG_SCRIPT} BOOT_TMP) || Exit "Failed to get boot files"
+	BOOT_PARTITION_MOUNT=$(./${CONFIG_SCRIPT} BOOT_PARTITION_MOUNT) || Exit "Failed to parse boot partition mount directory"
+	ROOTFS_PARTITION_MOUNT=$(./${CONFIG_SCRIPT} ROOTFS_PARTITION_MOUNT) || Exit "Failed to parse rootfs partition mount directory"
+	BOOT_DISK_LABEL=$(./${CONFIG_SCRIPT} BOOT_DISK_LABEL) || Exit "Failed to parse boot disk label"
+	ROOTFS_DISK_LABEL=$(./${CONFIG_SCRIPT} ROOTFS_DISK_LABEL) || Exit "Failed to parse rootfs disk label"
+	FIRMWARE_DEST=$(./${CONFIG_SCRIPT} FIRMWARE_DEST) || Exit "Failed to get firmware location"
+}
+
 
 
 # ===============================================
@@ -71,7 +103,8 @@ function usage() {
   echo "   --fullwipe     wipe USB drive </mnt/<sdX>>"
   echo "   --chroot       Enter chroot environment"
   echo
-  echo "   -h, --help     This help dialog."
+  echo "   -v, --version  Show $(basename $0) version"
+  echo "   -h, --help     This help dialog"
   echo "└──────────────────────────────────────────────────┘"
   echo ""
 }
@@ -87,13 +120,13 @@ while [[ $# -gt 0 ]]
 do
     key="$1"
     case $key in
-        --fullbuild)
+        -f|--fullbuild)
             FULLBUILD="YES"
             TARGET="$2"
             shift
             shift
             ;;
-        --base-system)
+        -b|--base-system)
             BASEBUILD="YES"
             TARGET="$2"
             shift
@@ -122,13 +155,13 @@ do
             shift
             shift
             ;;
-        --unmount)
+        -u|--unmount)
             UNMOUNT="YES"
             TARGET="$2"
             shift
             shift
             ;;
-        --version)
+        -v|--version)
             version
             exit 0
             shift
@@ -182,6 +215,25 @@ function error()
   [ $LOG == true ] && echo "$1" >> $LOGFILE
   exit 1
 }
+
+function lognl()
+{
+	echo
+	echo "=========================================="
+	echo "STEP: $1"
+	echo "=========================================="
+}
+
+function err()
+{
+	echo
+	echo "=========================================="
+	echo " ERROR:       $1"
+	echo " FROM:        $0"
+	echo "=========================================="
+	exit 1
+}
+
 
 #================ PARTITIONING ===================#
 function partioning()
@@ -417,6 +469,10 @@ function rootpwcfg()
 
 
 #================ TUI CONFIG ===================#
+# Autostart does not work:
+# https://serverfault.com/questions/1030047/how-do-i-disable-automatic-login-in-a-debian-live-standard-image/1030050#1030050
+# https://unix.stackexchange.com/questions/669327/gettytty1-serivce-service-is-permanently-restarting-debian-11-live-iso
+
 function copytui()
 {
   log "copy $WORK/tui to ${MNT}/opt"
@@ -424,8 +480,8 @@ function copytui()
   $CHROOT chown root  /opt/tui/*
   $CHROOT chmod +x    /opt/tui/*
 
-  cp -rv --parents ${WORK}/config/etc/systemd/system/getty@tty1.service.d \
-                    /etc/systemd/system/getty@tty1.service.d/autologin.conf      
+  cp -rv --parents ${WORK}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
+                    ${MNT}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf       
 }
 
 function automount()
@@ -441,7 +497,7 @@ function tuiautostart()
 {
 log "create tui autostart on getty"
 # file: /etc/systemd/system/getty\@tty1.service.d/override.conf
-cat <<EOF > ${MNT}/etc/systemd/system/getty@tty1.service.d/autologin.conf
+cat <<EOF > ${MNT}/etc/systemd/system/getty\@tty1.service.d/autologin.conf
 [Service]
 ExecStart=
 ExecStart=-/usr/sbin/agetty --autologin root --login-program /root/tui/menu.sh --mode service --noissue --noclear %I $TERM
@@ -514,7 +570,8 @@ updatecfg()
 }
 
 function enter_chroot()
-{
+{ 
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
   unmounting && mounting ${TARGET}3
   $CHROOTCMD $MNT
 }
@@ -544,11 +601,11 @@ if [ ! -z $TARGET ]; then
   fi
 
   if [ $UPDATE_TUI == "YES" ]; then
-      mounting $TARGET && cp -rv tui /mnt/usb/root/tui
+      umount ${TARGET}3 && mounting ${TARGET}3 && cp -rv tui /mnt/usb/root/tui
   fi
 
   if [ $UPDATE_CONFIG == "YES" ]; then
-      mounting $TARGET && updatecfg && log "Config is up to date!"
+      umount ${TARGET}3 && mounting ${TARGET}3 && updatecfg && log "Config is up to date!"
   fi
 
   if [ $ENTER_CHROOT == "YES" ]; then

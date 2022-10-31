@@ -1,8 +1,3 @@
-#!/bin/bash
-
-# ===========================
-# FILEBROWSER FUNCTIONS
-# ===========================
 function filebrowser()
 {
     # first parameter is Menu Title
