@@ -19,7 +19,7 @@ function flash_sda2()
     FROM=/mnt/usb/nprohd_sda2.img.gz
     TO=/dev/sda2
     log "Flashing $FROM to $TO ..."
-    partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
+    cat $FROM | gunzip -c | partclone.ext4 -N -d -r -s - -o $TO && \
     log "Flashing $FROM to $TO succesful."
 }
 
@@ -29,6 +29,6 @@ function flash_sda()
     FROM=/mnt/usb/nprohd_sda.img.gz
     TO=/dev/sda
     log "Flashing $FROM to $TO ..."
-    partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
+    cat $FROM | gunzip -c | partclone.dd -N -d  -s - -o $TO && \
     log "Flashing $FROM to $TO succesful."
 }

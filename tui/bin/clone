@@ -32,10 +32,11 @@ function clone_sda2()
 # clone & compress - whole
 function clone_sda()
 {
+    # https://partclone.org/usage/partclone.dd.php
     FROM=/dev/sda
     TO=/mnt/usb/nprohd_sda_$(date +%F_%H-%M-%S).img.gz
     log "Cloning $FROM to $TO ..."
-    partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
+    partclone.dd -N -s $FROM | gzip -c -6 > $TO && \
     log "Cloning $FROM to $TO succesful."
 }
 
