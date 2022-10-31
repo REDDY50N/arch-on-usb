@@ -14,11 +14,12 @@ WORK="$(dirname $(readlink -f $0))"
 LOGFILE="$WORK/build.log"
 source $WORK/version
 
-MNT="/mnt/usb"
+MNT="/mnt/rootfs"
 ROOTFS="$MNT"
-BOOT="/mnt/usb/boot"
+BOOT="$MNT/boot"
 
 PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
+PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages-debian.txt)
 
 CHROOT="arch-chroot /mnt/usb"
 CHROOTCMD="arch-chroot"
@@ -26,6 +27,9 @@ CHROOTCMD="arch-chroot"
 HOSTNAME=superman
 USER=polar
 ROOTPW="evis32"
+
+STRAPCMD="pacstrap $MNT $PACKAGES" 
+STRAPCMD="debootstrap --include $PACKAGES --arch amd64 bullseye /mnt/usb"
 
 # ===============================================
 # CLI INTERFACE
@@ -80,8 +84,7 @@ function usage()
 
 function version()
 {
-  echo "$(basename $0)"
-  echo "Version: ${DEBIAN_VERSION}"
+  echo "$(basename $0) - version: ${DEBIAN_VERSION}"
 }
 
 POSITIONAL=()
@@ -204,50 +207,10 @@ function err()
 	exit 1
 }
 
-
-#================ PARTITIONING ===================#
-function partioning()
-{ lognl "Partioning" 
-  log "Clear partion data and create new partion table!"
-  sgdisk -Z ${TARGET}
-  sgdisk -o -n 1:0:+10M   -t 1:EF02 \
-            -n 2:0:+500M  -t 2:EF00 \
-            -n 3:0:+3G    -t 3:8300 \
-            -n 4:0:0      -t 4:8300 \
-            ${TARGET}
-
-  log "Wipe ${TARGET}"
-  wipefs -a ${TARGET}2
-  wipefs -a ${TARGET}3
-  wipefs -a ${TARGET}4
-
-
-  lognl "Formating"
-  # Hint: Do not format the /dev/sdX1 block. This is the BIOS/MBR parition."
-  
-  # Format the 500MB EFI system partition with a FAT32 filesystem:
-  mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
-
-  # Format the Linux partition with an ext4 filesystem:
-  mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
-
-  # Format the data partition with an exfat/ntfs filesystem:
-  mkfs.ext4 -q ${TARGET}4 && log "Creating ${TARGET}4 fs done!"
-}
-
-function fullwipe()   # optional
-{
-  log "Start full wipe ..."
-  log "This may take long time depending on disk size (1 hour+)"
-  dd if=/dev/zero of=$TARGET status=progress && sync && log "Wiping done!"
-  #dd if=/dev/zero of=$TARGET bs=16M status=progress && sync && log "==> Wiping done!"
-}
-
 #================ MOUNTING ===================#
-
 function unmounting()
 {
-  log "==> Unmount first ..."
+  lognl "Unmount ..."
 
   if mountpoint -q $BOOT; then
     log "==> $BOOT is still mounted!"
@@ -269,77 +232,89 @@ function unmounting()
 
 function mounting()
 {
-  log "==> Start mounting ..."
-  
-  log "==> Mount the ext4 formatted partition as the root filesystem"
-  mkdir -p "$MNT" && log "Creating mountpoint $MNT done!"
-  mount ${TARGET}3 $MNT && log "Mounting ${TARGET}3 on $MNT done!" || error "Mounting ${TARGET}3 on $MNT failed!"
-
-  log "==> Mount the FAT32 formatted EFI partition to /boot"
-  mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
-  mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BOOT failed! ==> Hint: Reboot if mount fails due to unknow filesystem type »vfat«!"
-
-  log "==> Mounting done!" && log ""
+  lognl "Mounting ..."
+  mkdir -p "$MNT" && log "Creating rootfs mountpoint $MNT done!"
+  mount ${TARGET}2 $MNT && log "Mounting ${TARGET}2 on $MNT as done!" || error "Mounting ${TARGET}3 on $MNT failed!"
 }
 
+
+#================ PARTITIONING ===================#
+function partioning()
+{ 
+  lognl "Partioning ..." 
+  log "Clear partion data and create new partion table!"
+  sgdisk -Z ${TARGET}
+  sgdisk -o -n 1:0:+10M   -t 1:EF02 \
+            -n 2:0:+3G    -t 3:8300 \
+            -n 3:0:0      -t 4:8300 \
+            ${TARGET}
+
+  log "Wipe ${TARGET}"
+  wipefs -a ${TARGET}2
+  wipefs -a ${TARGET}3
+
+  lognl "Formating ..."
+  # Hint: Do not format the /dev/sdX1 block. This is the BIOS/MBR parition."
+  
+  # Format the Linux partition with an ext4 filesystem:
+  mkfs.ext4 -q ${TARGET}2 && log "Creating ${TARGET}3 fs done!"
+
+  # Format the data partition with an exfat/ntfs filesystem:
+  mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}4 fs done!"
+}
+
+function fullwipe()   # optional
+{
+  lognl "Full wipe ..."
+  log "This may take long time depending on disk size (1 hour+)"
+  dd if=/dev/zero of=$TARGET status=progress && sync && log "Wiping done!"
+  #dd if=/dev/zero of=$TARGET bs=16M status=progress && sync && log "==> Wiping done!"
+}
 
 #================ BASE SYSTEM ===================#
 
 function basesystem()
 {
-  log "==> Download and install the Arch Linux base packages using pacstrap."
-  pacstrap $MNT $PACKAGES && \
-  log "==> Installing base system done!" && log ""
+  lognl "Install base system ..."
+  $STRAPCMD && log "==> Base system installed!" && log ""
 }
-
-# Install Yay
-function install_yay()
-{
-  local PATH=/tmp/build
-  #$CHROOT pacman -S --needed git base-devel
-  "${CHROOT}" mkdir -p $PATH && cd $PATH && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
-}
-
-function fstabgen()
-{
-  log "==> Generate a new /etc/fstab using UUIDs as source identifiers"
-  genfstab -U /mnt/usb > /mnt/usb/etc/fstab && \
-  log "==> Generating fstab done!" && log ""
-}
-
 
 
 #==============================================#
 # CONFIGURE
 #==============================================#
 
+function fstabgen()
+{
+  lognl "Generate fstab ..."
+  # Generate a new /etc/fstab using UUIDs as source identifiers
+  genfstab -U ${ROOTFS} > ${ROOTFS}/etc/fstab && \
+  cat ${ROOTFS}/etc/fstab && \
+  log "==> Generating fstab done!" || error "==> Generating fstab failed!"
+}
+
+
 function localecfg()
 {
-  log "==> Set timezone"
-  $CHROOT ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+  lognl "Configure time ..."
+  chroot ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime && log "==> Set timezone !" || err "Failed to set timezone!"
+  chroot hwclock --systohc && log "==> Generate /etc/adjtime (hwclock)" || err "Failed to set /etc/adjtime!"
 
-  log "==> Generate /etc/adjtime (hwclock)"
-  $CHROOT  hwclock --systohc
-
-  LANG=de_DE.UTF-8
-  log "set language to ${LANG}"
-  # Uncomment desired language in /etc/locale.gen:
-  #$CHROOT sed -i 's/#de_DE ISO-8859-1/de_DE ISO-8859-1/g' /etc/locale.gen
+  lognl "Configure language & keyboard ..."
   $CHROOT sed -i 's/#de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/g' /etc/locale.gen
-  $CHROOT locale-gen
-  $CHROOT echo "LANG=de_DE.UTF-8" > /etc/locale.conf
-
-  $CHROOT ech "KEYMAP=de-latin1" > /etc/vconsole.conf
-
+  chroot locale-gen
+  chroot echo "LANG=de_DE.UTF-8" > /etc/locale.conf
+  chroot echo "KEYMAP=de-latin1" > /etc/vconsole.conf
 }
 
 #================ USER-CFG ===================#
 
 function hostcfg()
 {
-  $CHROOT echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}" 
+  lognl "Configure hostname & hosts ..."
+  chroot echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}" || err "Failed to set hostname!"
 
-cat <<EOF > ${MNT}/etc/hosts
+cat <<EOF > ${ROOTFS}/etc/hosts
 127.0.0.1  localhost
 ::1        localhost
 127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}"
@@ -351,7 +326,7 @@ EOF
 
 #================ BOOTLAODER ===================#
 
-function bootloader()
+function arch_bootloader()
 {
   lognl "Install Bootloader"
 #cat << EOF | $CHROOT
@@ -365,11 +340,11 @@ function bootloader()
   $CHROOT grub-mkconfig -o /boot/grub/grub.cfg
 }
 
-function deb_bootloader()
+function bootloader()
 {
   lognl "Install Bootloader"
   chmod -x "${ROOTFS}/etc/grub.d/30_os-prober"
-  chroot "${ROOTFS}" grub-install --force ${TARGET}
+  chroot  "${ROOTFS}" grub-install --force ${TARGET}
   chroot "${ROOTFS}" update-grub
 }
 
@@ -382,65 +357,48 @@ function newmkinitcpio()
 
 function networkcfg()
 {
-log "" && log "==> Create network configuration file for automatically establish wired connections"
-local PATH=/etc/systemd/network/10-ethernet.network
+lognl "Configure network (wired)"
 
-# TODO:
-# printf 'line1\nline2\nline3\n'
-# echo -e ""
+cat << EOF > $ROOTFS/etc/systemd/network/10-ethernet.network
+[Match] 
+Name=en*      
+Name=en* 
+Name=eth* 
 
-cat << EOF | $CHROOT
-printf "[Match] \
-\nName=en* \     
-\nName=en* \
-\nName=eth* \
-\n \
-\n[Network] \
-\nDHCP=yes \
-\nIPv6PrivacyExtensions=yes \  
-\n \
-\n[DHCPv4] \
-\nRouteMetric=10 \ 
-\n \
-\n[IPv6AcceptRA] \
-\nRouteMetric=10" > $PATH
+[Network] 
+DHCP=yes 
+IPv6PrivacyExtensions=yes   
+
+[DHCPv4] 
+RouteMetric=10 
+
+[IPv6AcceptRA]
+RouteMetric=10
 EOF
 
-# HINT: you can add wireless config here:
-# https://mags.zone/help/arch-usb.html
+  lognl "Enable networking services ..."
+  chroot systemctl enable systemd-networkd.service
+  chroot systemctl enable systemd-resolved.service
+  chroot ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 
+  chroot systemctl enable systemd-timesyncd.service
 }
 
-function networkenable()
-{
-log "==> Enable systemd networking service"
-cat << EOF | $CHROOT
-systemctl enable systemd-networkd.service
-
-systemctl enable systemd-resolved.service
-ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 
-
-systemctl enable systemd-timesyncd.service
-EOF
-}
 
 
 function wheelgrpcfg()
 {
-  log "==> Ensure the wheel group exists and add user to it."
-cat << EOF | $CHROOT
-groupadd wheel
-usermod -aG wheel polar
-EOF
-log ""
+  lognl "Configure wheelgroup"
+  # Ensure the wheel group exists and add user to it."
+  chroot groupadd wheel
+  chroot usermod -aG wheel polar
 }
 
 function sudocfg()
 {
-  log "==> Configure sudo ..."
-  $CHROOT echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo
-  $CHROOT groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
-  $CHROOT usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
-  log ""
+  lognl "==> Configure sudo ..."
+  chroot echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo
+  chroot groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
+  chroot usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
 }
 
 # TODO: 
@@ -448,10 +406,20 @@ function sudocfg()
 
 function rootpwcfg()
 {
-  $CHROOT usermod --password $ROOTPW root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
-  echo -e "${ROOTPW}\n${ROOTPW}\n" | $CHROOTCMD $MNT passwd root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
+  chroot usermod --password $ROOTPW root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
+  echo -e "${ROOTPW}\n${ROOTPW}\n" | chroot ${ROOTFS} passwd root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
 }
 
+
+
+# Install Yay
+function install_git_repo()
+{
+  local PATH=tmp/build
+  mkdir -p "$ROOTFS/$PATH" && "$ROOTFS/$PATH" 
+  git clone https://aur.archlinux.org/yay.git "$ROOTFS/$PATH"
+  # chroot install.sh
+}  
 
 
 #================ TUI CONFIG ===================#
@@ -473,7 +441,7 @@ function copytui()
 function automount()
 {
 # automount 
-cat <<EOF > ${MNT}/etc/fstabF
+cat <<EOF > ${ROOTFS}/etc/fstab
 UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
 UUID=${UUID_DATAFS}  /data      vfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
 EOF
@@ -555,17 +523,53 @@ updatecfg()
   _configure
 }
 
-function enter_chroot()
+
+
+# ============================================= #
+#  CLI CALL FUNCTIONS
+# ============================================= #
+target_check()
+{
+  [ -z ${TARGET} ] && log "You must specify a target!" && \
+  usage && exit 1
+}
+
+
+function fullbuild()
 { 
-  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
-  unmounting && mounting ${TARGET}3
-  $CHROOTCMD $MNT
+  target_check
+
+
 }
 
 
 
+
+function update_tui()
+{ 
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
+  unmounting && mounting ${TARGET}2 && \
+  cp -rv tui ${ROOTFS}/root/tui && log "TUI is up to date!" || err "Failed to update TUI!"
+}
+
+function update_config()
+{ 
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
+  unmounting && mounting ${TARGET}2 && \
+  updatecfg && log "Config is up to date!" || err "Failed to update config!"
+}
+
+function enter_chroot()
+{ 
+  target_check && unmounting && mounting && chroot $ROOTFS
+}
+
+
+
+
+
 # ============================================= #
-#  MAIN
+#  MAIN CLI
 # ============================================= #
 
 if [ ! -z $TARGET ]; then 
@@ -579,19 +583,19 @@ if [ ! -z $TARGET ]; then
   fi
 
   if [ $FULLBUILD == "YES" ]; then
-    log "Build full image ..." && fullbuild
+    fullbuild
   fi
 
   if [ $BASEBUILD == "YES" ]; then
-    log "Build full image ..." && basebuild
+    basebuild
   fi
 
   if [ $UPDATE_TUI == "YES" ]; then
-      umount ${TARGET}3 && mounting ${TARGET}3 && cp -rv tui /mnt/usb/root/tui
+    update_tui
   fi
 
   if [ $UPDATE_CONFIG == "YES" ]; then
-      umount ${TARGET}3 && mounting ${TARGET}3 && updatecfg && log "Config is up to date!"
+     update_config 
   fi
 
   if [ $ENTER_CHROOT == "YES" ]; then
