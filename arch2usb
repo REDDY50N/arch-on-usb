@@ -33,6 +33,7 @@ ROOTPW="evis32"
 
 # OPTIONS (DEFAULT)
 UNMOUNT="NO"
+ADDEFI="NO"
 FULLWIPE="NO"
 FULLBUILD="NO"
 BASEBUILD="NO"
@@ -123,9 +124,12 @@ do
             ;;
         -w|--fullwipe)
             FULLWIPE="YES"
-            TARGET="$2"
             shift
             ;;
+        -e|--efi)
+          ADDEFI="YES"
+          shift
+          ;;     
         --chroot)
             ENTER_CHROOT="YES"
             TARGET="$2"
@@ -168,31 +172,13 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 # root check
 [ $(whoami) != root ] && echo "You must be root!" && exit 1
 
-# check for empty target
-#[ -z $TARGET ] && echo -e "You must specify a target. Determine the target USB device name with lsblk first!\n" && usage && exit 1
-
 # clean log
 [ $LOG == true ] && [ -f $LOGFILE ] && rm $LOGFILE
-
-
 
 
 # ===============================================
 # FUNCTIONS
 # ===============================================
-function log()
-{
-  echo "$1"
-  [ $LOG == true ] && echo "$1" >> $LOGFILE
-}
-
-function error()
-{
-  echo "$1"
-  [ $LOG == true ] && echo "$1" >> $LOGFILE
-  exit 1
-}
-
 STEPCOUNTER=0
 function lognl()
 {
@@ -203,60 +189,56 @@ function lognl()
   STEPCOUNTER=$((STEPCOUNTER+1))
 }
 
-function err()
+function log()
 {
-	echo
-	echo "=========================================="
-	echo " ERROR:       $1"
-	echo " FROM:        $0"
-	echo "=========================================="
-	exit 1
+  echo "$1"
+  [ $LOG == true ] && echo "$1" >> $LOGFILE
 }
 
-
-#================ PARTITIONING ===================#
-function partioning()
+function error()
 {
-  lognl "Partioning ..."
-  #Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files
-  sgdisk -Z ${TARGET}
-  sgdisk -o -n 1:0:+10M   -t 1:EF02 \
-  #          -n 2:0:+500M  -t 2:EF00 \
-            -n 2:0:+3G    -t 2:8300 \
-            -n 3:0:0      -t 3:8300 \
-            ${TARGET}
-
-  #wipefs -a ${TARGET}2
-  wipefs -a ${TARGET}2
-  wipefs -a ${TARGET}3
-
-  lognl "Formating ..."
-  # Hint: Do not format the /dev/sdX1 block. This is the BIOS/MBR parition."
-
-  # Format the 500MB EFI system partition with a FAT32 filesystem:
-  #mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
-
-  # Format the Linux partition with an ext4 filesystem:
-  mkfs.ext4 -q ${TARGET}2 && log "Creating ${TARGET}2 fs done!"
-
-  # Format the data partition with an exfat/ntfs filesystem:
-  mkfs.exfat -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!"
+  echo "ERROR: $1"
+  [ $LOG == true ] && echo "$1" >> $LOGFILE
+  exit 1
 }
 
-function fullwipe()   # optional
+function overview()
 {
-  lognl "Full wipe ..."
-  log "This may take long time depending on disk size (1 hour+)"
-  dd if=/dev/zero of=$TARGET status=progress && sync && log "Wiping done!"
-  #dd if=/dev/zero of=$TARGET bs=16M status=progress && sync && log "==> Wiping done!"
+  lognl "Build Overview"
+  log "Starting build $(date +"%D %T")"
+  log ""
+  log "Packages:"
+  log "$PACKAGES"
 }
 
-#================ MOUNTING ===================#
+#======================================#
+# 1. MOUNT / UNMOUNT 
+#======================================#
 
-function unmounting()
+#function unmounting()
+# {
+#  lognl "Unmount ..."
+#  mountpoint -q $MNT && umount -A ${TARGET}* || log "No device mounted!"
+#}
+
+function unmount()
 {
-  lognl "Unmount ..."
-  mountpoint -q $MNT && umount -A ${TARGET}* || log "No device mounted!"
+  lognl "Unmount (proper) ..."
+  if ps ax | grep -v grep | grep udiskie > /dev/null; then
+    log "Kill udiskie automount!"
+    pkill -9 -e -f udiskie 
+  elif ps ax | grep -v grep | grep udiskd > /dev/null; then  
+    pkill -9 -e -f udisksd
+  else "No automount helper found!" 
+  fi
+
+  if mount | grep ${TARGET}2 > /dev/null; then
+    umount -f ${TARGET}2
+  elif mount | grep  ${TARGET}3 > /dev/null; then
+    umount -f ${TARGET}3
+  else
+    log "No device mounted!"
+  fi
 }
 
 function mounting()
@@ -264,83 +246,166 @@ function mounting()
   lognl "Mounting ..."
 
   mkdir -p "$MNT" && log "Creating mountpoint $MNT done!"
-  mount ${TARGET}2 $MNT && log "Mounting ${TARGET}2 on $MNT done!" || error "Mounting ${TARGET}3 on $MNT failed!"
+  
+  if [ $ADDEFI == YES ]; then
+    mount ${TARGET}3 $MNT && log "Mounting ${TARGET}3 on $MNT done!" || error "Mounting ${TARGET}3 on $MNT failed!"
+    mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
+    mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BOOT failed! ==> Hint: Reboot if mount fails due to unknow filesystem type »vfat«!"
+  else
+    mount ${TARGET}2 $MNT && log "Mounting ${TARGET}2 on $MNT done!" || error "Mounting ${TARGET}2 on $MNT failed!"
+  fi
+  
 
-  #log "==> Mount the FAT32 formatted EFI partition to /boot"
-  #mkdir -p "$BOOT" && log "Creating mountpoint $BOOT done!"
-  #mount ${TARGET}2 $BOOT && log "Mounting ${TARGET}2 on $BOOT done!" || error "Mounting ${TARGET}3 on $BOOT failed! ==> Hint: Reboot if mount fails due to unknow filesystem type »vfat«!"
+}
+#======================================#
+# 2. PARTITIONING 
+#======================================#
+function partioning()
+{
+  lognl "Partioning ..."
+ 
+  if [ $FULLWIPE == true ]; then
+    lognl "Full wipe of ${TARGET} first ..."
+    fullwipe
+  fi
 
+  sgdisk -Z ${TARGET}
+
+  if [ $ADDEFI == YES ]; then
+    log "Add additional EFI partition!"
+    sgdisk -o \
+      -n 1:0:+10M   -t 1:EF02 \
+      -n 2:0:+500M  -t 2:EF00 \
+      -n 3:0:+3G    -t 3:8300 \
+      -n 4:0:0      -t 4:8300 \
+      ${TARGET}
+
+    wipefs -a ${TARGET}2
+    wipefs -a ${TARGET}3
+    wipefs -a ${TARGET}4
+    
+    lognl "Formating ..."
+    log "Format the 500MB EFI system partition with a FAT32 filesystem"
+    mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!" || error "Failed to create FAT /boot"
+    log "Format the Linux partition with an ext4 filesystem"
+    mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!" error "Failed to create ext4 /rootfs"
+    log "Format the data partition with an exfat/ntfs filesystem"
+    mkfs.exfat ${TARGET}4 --volume-label=data -v && log "Creating ${TARGET}4 fs done!" error "Failed to create /data"
+  else
+    log "Only BIOS/MBR boot mode!"
+    sgdisk -o \
+      -n 1:0:+10M   -t 1:EF02 \
+      -n 2:0:+3G    -t 2:8300 \
+      -n 3:0:0      -t 3:8300 \
+      ${TARGET}
+
+    wipefs -a ${TARGET}2
+    wipefs -a ${TARGET}3
+
+    lognl "Formating ..."
+    lognl "Formating ..."
+    log "Format the Linux partition with an ext4 filesystem"
+    mkfs.ext4 -q ${TARGET}2 && log "Creating ${TARGET}2 fs done!" error "Failed to create ext4 /rootfs"
+    log "Format the data partition with an exfat/ntfs filesystem"
+    mkfs.exfat ${TARGET}3 --volume-label=data -v && log "Creating ${TARGET}3 fs done!" error "Failed to create /data"
+  fi
+}
+
+function fullwipe()   # optional
+{
+  SPEEDUP=NO
+  lognl "Full wipe ..."
+  log "This may take long time depending on disk size (1 hour+)"
+  if [ $SPEEDUP == YES ]; then
+    dd if=/dev/zero of=$TARGET bs=16M status=progress && sync && log "==> Wiping done!"
+  else
+    dd if=/dev/zero of=$TARGET status=progress && sync && log "Wiping done!"
+  fi
 }
 
 
-#================ BASE SYSTEM ===================#
-
+#======================================#
+#  3. BASE SYSTEM 
+#======================================#
 function basesystem()
 {
   lognl "Install base system ..."
   # download and install the Arch Linux base packages using pacstrap.
   pacstrap $MNT $PACKAGES && \
-  log "==> base system installed!" && log ""
+  log "==> Base system was installed!" || error "Failed to install base system!"
 }
 
+#======================================#
+# 4. ADDITIONAL PACKAGES
+#======================================#
 # Install Yay
 function install_yay()
 {
-  local PATH=/tmp/build
-  #$CHROOT pacman -S --needed git base-devel
-  $CHROOT mkdir -p $PATH && cd $PATH && git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -si
+  lognl "Install AUR helper yay"
+  TMPPATH=/tmp/build
+  arch-chroot $ROOTFS pacman -S --needed git base-devel
+  arch-chroot $ROOTFS git clone https://aur.archlinux.org/yay.git /tmp/yay
+  log "run makepkg is not allowed as root ==> run manually later from /tmp/yay"
+  # not allowed as root
+  # arch-chroot $ROOTFS makepkg --noconfirm -si /tmp/yay
 }
+
+
+#==============================================#
+# 5. CONFIG - REQUIRED
+#==============================================#
 
 function fstabgen()
 {
+  lognl "Generate fstab"
   log "==> Generate a new /etc/fstab using UUIDs as source identifiers"
   genfstab -U /mnt/usb > /mnt/usb/etc/fstab && \
-  log "==> Generating fstab done!" && log ""
+  log "==> Generating fstab done!" || error "Failed to create fstab!"
+
+  if [ $ADDEFI == YES ]; then
+    UUID_ROOTFS=$(/bin/lsblk -o UUID -n ${TARGET}3 )
+    UUID_DATAFS=$(/bin/lsblk -o UUID -n ${TARGET}4 )
+  else
+    UUID_ROOTFS=$(/bin/lsblk -o UUID -n ${TARGET}2 )
+    UUID_DATAFS=$(/bin/lsblk -o UUID -n ${TARGET}3 )
+  fi  
+
+  # automount
+  cat <<EOF > ${MNT}/etc/fstab
+  UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
+  UUID=${UUID_DATAFS}  /data      vfat  uid=${USER},gid=${USER}  0  2
+#EOF
 }
 
-
-
-#==============================================#
-# CONFIGURE
-#==============================================#
 
 function localecfg()
 {
+  lognl "Time, Locales & Keyboard Settings"
   log "==> Set timezone"
-  $CHROOT ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime
+  arch-chroot $ROOTFS ln -sf /usr/share/zoneinfo/Europe/Berlin /etc/localtime && log "Set timezone" || error "Failed to set timezone!"
 
-  log "==> Generate /etc/adjtime (hwclock)"
-  $CHROOT  hwclock --systohc
+  log "==> Set hwclock from BIOS Generate /etc/adjtime (hwclock)"
+  arch-chroot $ROOTFS  hwclock --systohc && log "Set hwclock" || error "Failed to set hwclock!"
 
   LANG=de_DE.UTF-8
   log "set language to ${LANG}"
-  # Uncomment desired language in /etc/locale.gen:
-  #$CHROOT sed -i 's/#de_DE ISO-8859-1/de_DE ISO-8859-1/g' /etc/locale.gen
-  $CHROOT sed -i 's/#de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/g' /etc/locale.gen
-  $CHROOT locale-gen
-  $CHROOT echo "LANG=de_DE.UTF-8" > /etc/locale.conf
+  arch-chroot $ROOTFS sed -i 's/#de_DE.UTF-8 UTF-8/de_DE.UTF-8 UTF-8/g' /etc/locale.gen && log "Set language to german UTF8" || error "Failed to set language!"
+  arch-chroot $ROOTFS locale-gen && log "Set language to german UTF8" || error "Failed to set language!"
 
-  $CHROOT ech "KEYMAP=de-latin1" > /etc/vconsole.conf
-
+  log "Set console keymap to de-latin1"
+  arch-chroot echo "KEYMAP=de-latin1" > /etc/vconsole.conf && log "Set console keymap to german" || error "Failed to set german keymap for console!"
 }
-
-#================ USER-CFG ===================#
 
 function hostcfg()
 {
-  $CHROOT echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}"
+  arch-chroot $ROOTFS echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}" || error "Failed to set hostname!"
 
-cat <<EOF > ${MNT}/etc/hosts
-127.0.0.1  localhost
-::1        localhost
-127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}"
+  cat <<EOF > ${ROOTFS}/etc/hosts
+  127.0.0.1  localhost
+  ::1        localhost
+  127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}"
 EOF
 }
-
-
-
-
-#================ BOOTLAODER ===================#
 
 function bootloader()
 {
@@ -349,93 +414,81 @@ function bootloader()
 #grub-install --target=x86_64-efi --efi-directory /boot --recheck --removable && \
 #grub-mkconfig -o /boot/grub/grub.cfg
 #EOF
-
-  $CHROOT grub-install --force --target=i386-pc --recheck ${TARGET}
-  $CHROOT grub-install --force --target=x86_64-efi --efi-directory /boot --recheck --removable
-  $CHROOT grub-mkconfig -o /boot/grub/grub.cfg
+lognl "Install Grub Bootloader"
+  if [ "$ADDEFI" == YES ];then
+    log "Install bios and efi mode"
+    arch-chroot $ROOTFS grub-install --force --target=i386-pc --recheck ${TARGET}
+    arch-chroot $ROOTFS grub-install --force --target=x86_64-efi --efi-directory /boot --recheck --removable
+    arch-chroot $ROOTFS grub-mkconfig -o /boot/grub/grub.cfg
+  else
+    log "Install bios mode only"
+    arch-chroot $ROOTFS grub-install --force --target=i386-pc --recheck ${TARGET}
+    arch-chroot $ROOTFS grub-mkconfig -o /boot/grub/grub.cfg
+  fi
 }
 
-function newmkinitcpio()
-{
- echo "TODO"
+function create_initial_ramdisk()
+{ 
+  lognl "Initial ramdisk"
+  echo "TODO: create initial ram disk - mkinitcpio"
+  echo "Load kernel mpodules before init - early userspace"
+  echo "https://wiki.archlinux.org/title/Mkinitcpio"
 }
-
-#================ END::BOOTLAODER ===================#
 
 function networkcfg()
 {
-log "" && log "==> Create network configuration file for automatically establish wired connections"
-local PATH=/etc/systemd/network/10-ethernet.network
+  lognl "Network config (10-ethernet.network)"  
+  log "==> Create network config file for automatically establish wired connections"
 
-# TODO:
-# printf 'line1\nline2\nline3\n'
-# echo -e ""
-
-cat << EOF | $CHROOT
-printf "[Match] \
-\nName=en* \
-\nName=en* \
-\nName=eth* \
-\n \
-\n[Network] \
-\nDHCP=yes \
-\nIPv6PrivacyExtensions=yes \
-\n \
-\n[DHCPv4] \
-\nRouteMetric=10 \
-\n \
-\n[IPv6AcceptRA] \
-\nRouteMetric=10" > $PATH
+  cat << EOF > ${ROOTFS}/etc/systemd/network/10-ethernet.network
+  printf "[Match] \
+  \nName=en* \
+  \nName=en* \
+  \nName=eth* \
+  \n \
+  \n[Network] \
+  \nDHCP=yes \
+  \nIPv6PrivacyExtensions=yes \
+  \n \
+  \n[DHCPv4] \
+  \nRouteMetric=10 \
+  \n \
+  \n[IPv6AcceptRA] \
+  \nRouteMetric=10" > $PATH
 EOF
 
-# HINT: you can add wireless config here:
-# https://mags.zone/help/arch-usb.html
+  # HINT: you can add wireless config here:
+  # https://mags.zone/help/arch-usb.html
+  log "Enable network (systemd)"
+  arch-chroot $ROOTFS systemctl enable systemd-networkd.service
+  arch-chroot $ROOTFS systemctl enable systemd-resolved.service
+  arch-chroot $ROOTFS ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  arch-chroot $ROOTFS systemctl enable systemd-timesyncd.service
 }
 
-function networkenable()
+function permissionscfg()
 {
-log "==> Enable systemd networking service"
-cat << EOF | $CHROOT
-systemctl enable systemd-networkd.service
+  lognl "Configure wheelgroup, sudoers, rootpw ... "
+  log "==> Configure wheelgroup ..."
+  arch-chroot $ROOTFS groupadd wheel
+  arch-chroot $ROOTFS usermod -aG wheel polar
 
-systemctl enable systemd-resolved.service
-ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
-
-systemctl enable systemd-timesyncd.service
-EOF
-}
-
-
-function wheelgrpcfg()
-{
-  log "==> Ensure the wheel group exists and add user to it."
-cat << EOF | $CHROOT
-groupadd wheel
-usermod -aG wheel polar
-EOF
-log ""
-}
-
-function sudocfg()
-{
   log "==> Configure sudo ..."
-  $CHROOT echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo
-  $CHROOT groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
-  $CHROOT usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
-  log ""
-}
+  arch-chroot $ROOTFS  echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo && log "Create sudoers!" || error "Failed to create sudoers!"
+  arch-chroot $ROOTFS  groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
+  arch-chroot $ROOTFS  usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
+  
 
-# TODO:
-
-
-function rootpwcfg()
-{
   $CHROOT usermod --password $ROOTPW root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
   echo -e "${ROOTPW}\n${ROOTPW}\n" | $CHROOTCMD $MNT passwd root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
 }
 
 
+  
 
+#======================================#
+# TUI MENU
+#======================================#
 #================ TUI CONFIG ===================#
 # Autostart does not work:
 # https://serverfault.com/questions/1030047/how-do-i-disable-automatic-login-in-a-debian-live-standard-image/1030050#1030050
@@ -443,117 +496,119 @@ function rootpwcfg()
 
 function copytui()
 {
-  log "copy $WORK/tui to ${MNT}/opt"
-  cp -rv ${WORK}/tui  /opt
-  $CHROOT chown root  /opt/tui/*
-  $CHROOT chmod +x    /opt/tui/*
+  FROM=${WORK}/tui
+  TO=${MNT}/root
+  log "copy $FROM to $TO"
+  rsync -rpv $FROM $TO
+  
+  #rsync -rv $WORK/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
+  #          $ROOTFS/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf
 
-  cp -rv --parents ${WORK}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
-                    ${MNT}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf
-}
-
-function automount()
-{
-# automount
-cat <<EOF > ${MNT}/etc/fstabF
-UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
-UUID=${UUID_DATAFS}  /data      vfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
+  log "create tui autostart with service mode"
+  cat <<EOF > ${MNT}/etc/systemd/system/getty\@tty1.service.d/autologin.conf
+  [Service]
+  ExecStart=
+  ExecStart=-/usr/sbin/agetty --autologin root --login-program /root/tui/menu.sh --mode service --noissue --noclear %I $TERM
 EOF
 }
 
-function tuiautostart()
-{
-log "create tui autostart on getty"
-# file: /etc/systemd/system/getty\@tty1.service.d/override.conf
-cat <<EOF > ${MNT}/etc/systemd/system/getty\@tty1.service.d/autologin.conf
-[Service]
-ExecStart=
-ExecStart=-/usr/sbin/agetty --autologin root --login-program /root/tui/menu.sh --mode service --noissue --noclear %I $TERM
-EOF
-
-log "tui getty autostart done!" && log ""
-}
 
 
 
-
-# ===========================
+#======================================#
 # MAIN FUNCTIONS
-# ===========================
-_buildbasesys()
-{
-  about
-  log "Starting build $(date +"%D %T")"
-  sleep 2
-
-  ### prepare ###
-  unmounting
-  partioning
-  mounting
-
-  ### base system ###
-  basesystem
-  install_yay
-  fstabgen
-}
-
-_configure()
-{
-  ### fresh mount ###
-  unmounting
-  mounting
-
-
-  localecfg
-  hostcfg
-
-  $CHROOT locale-gen de_DE.UTF-8
-
-  networkcfg
-  networkenable
-
-  rootpwcfg
-  wheelgrpcfg
-
-  #sudocfg #TODO: dont works
-  copytui
-  #automount
-  #tuiautostart
-}
+#======================================#
 
 fullbuild()
 {
-  _buildbasesys
-  _configure
+  #
+  # install full system include partioning
+  #
+  about && overview && sleep 2
+
+  unmount
+  partioning
+  mounting
+  basesystem
+  
+  #install_yay  # not fully working yet
+
+  fstabgen
+  localecfg
+  hostcfg
+  create_initial_ramdisk
+  networkcfg
+  permissionscfg
 }
 
 basebuild()
 {
-  _buildbasesys
+  #
+  # Build base system without partioning
+  # 
+  about && overview && sleep 2
+
+  unmount && mounting
+  basesystem
+  #install_yay
+
+  fstabgen
+  localecfg
+  hostcfg
+  create_initial_ramdisk
+  networkcfg
+  permissionscfg
+  
+  copytui
 }
 
 updatecfg()
 {
-  _configure
+  #
+  # Update only config files on installed base system
+  #
+  fstabgen
+  localecfg
+  hostcfg
+  create_initial_ramdisk
+  networkcfg
+  permissionscfg
+
+  copytui
 }
 
-function enter_chroot()
+enter_chroot()
 {
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
-  unmounting && mounting ${TARGET}3
-  $CHROOTCMD $MNT
+  if [ $ADDEFI == YES ]; then
+    unmount && mounting ${TARGET}3 && arch-chroot $ROOTFS
+  else
+    unmount && mounting ${TARGET}2 && arch-chroot $ROOTFS
+  fi  
+}
+
+function install_packages()
+{
+  local _PACKAGES=""
+  lognl "Install additional packages (Pacman)"
+  if [ ! -z $_PACKAGES ]; then
+    log "Packages: $_PACKAGES"
+    arch-chroot $ROOTFS pacman -Syyu --noconfirm $_PACKAGES
+  else
+    log "No packages to install!"
+  fi  
 }
 
 
 
-# ============================================= #
+#======================================#
 #  MAIN
-# ============================================= #
+#======================================#
 
 if [ ! -z $TARGET ]; then
 
   if [ $UNMOUNT == "YES" ]; then
-    umount -A ${TARGET}* && umount ${TARGET}* && lsblk
+    umount -A ${TARGET}* && sleep 2 && umount ${TARGET}* && lsblk
   fi
 
   if [ $FULLWIPE == "YES" ]; then
@@ -565,7 +620,7 @@ if [ ! -z $TARGET ]; then
   fi
 
   if [ $BASEBUILD == "YES" ]; then
-    log "Build full image ..." && basebuild
+    log "Build base system ..." && basebuild
   fi
 
   if [ $UPDATE_TUI == "YES" ]; then
