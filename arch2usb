@@ -138,6 +138,9 @@ do
         -i|--img2datafs)
             IMG2DATAFS="YES"
             FROM="$2"
+            TARGET="$3"
+            shift
+            shift
             shift
             ;;    
         -x|--chroot)
@@ -435,7 +438,7 @@ function bootloader()
 #grub-install --target=x86_64-efi --efi-directory /boot --recheck --removable && \
 #grub-mkconfig -o /boot/grub/grub.cfg
 #EOF
-lognl "Install Grub Bootloader"
+  lognl "Install Grub Bootloader"
   if [ "$ADDEFI" == YES ];then
     log "Install bios and efi mode"
     arch-chroot $ROOTFS grub-install --force --target=i386-pc --recheck ${TARGET}
@@ -555,7 +558,7 @@ fullbuild()
   basesystem
   
   #install_yay  # not fully working yet
-
+  bootloader
   fstabgen
   localecfg
   hostcfg
@@ -574,7 +577,7 @@ basebuild()
   unmount && mounting
   basesystem
   #install_yay
-
+  bootloader
   fstabgen
   localecfg
   hostcfg
@@ -590,6 +593,7 @@ updatecfg()
   #
   # Update only config files on installed base system
   #
+  bootloader
   fstabgen
   localecfg
   hostcfg
@@ -627,13 +631,18 @@ function copy_images()
   lognl "Copy image files to datafs"
   TO=$DATAFS
   mkdir -p $DATAFS
+  
+  # TODO: if EFI; the TARGET4
   mount ${TARGET}3 $DATAFS
+
   if [ ! -z $FROM ]; then
     log "Copy image $FROM to $TO"
     rsync -rv $FROM $TO
   else
     error "No path to file geven!"
-  fi  
+  fi
+
+  umount -A ${TARGET}3 || umount $DATAFS || log "Nothing to unmount!"
 }
 
 
