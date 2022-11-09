@@ -14,7 +14,7 @@ WORK="$(dirname $(readlink -f $0))"
 LOGFILE="$WORK/build.log"
 source ${WORK}/version
 
-MNT="/mnt/rootfs"
+MNT="/mnt/debrootfs"
 ROOTFS="$MNT"
 CHROOT="chroot $MNT"
 
@@ -30,6 +30,8 @@ ROOTPW="evis32"
 REPO_URL="http://de.archive.ubuntu.com/ubuntu"
 REPO_URL_ARM="http://ports.ubuntu.com" #"http://ports.ubuntu.com/ubuntu-ports"
 
+
+
 # ===============================================
 # CLI INTERFACE
 # ===============================================
@@ -43,6 +45,7 @@ UPDATE_TUI="NO"
 UPDATE_CONFIG="NO"
 ENTER_CHROOT="NO"
 NOPART="NO"
+PARTITIONING="NO"
 TARGET=""
 
 function about() 
@@ -64,6 +67,9 @@ function usage()
 {
     
   echo "┌──────────────────────────────────────────────────┐"
+  echo "  PURPOSE:"
+  echo "   Create a Linux Live System on USB drive!"
+  echo
   echo "  USAGE: "
   echo "    $(basename $0) [options] [target]               "
   echo
@@ -71,6 +77,8 @@ function usage()
   echo "   -f, --fullbuild    build complete system"
   echo "   -b, --basebuild    build only base system"
   echo "   -n, --nopart       build on existing partitions"
+  echo
+  echo "   -p, --partitions   create empty partition scheme"      
   echo "   -w, --fullwipe     wipe USB drive  </mnt/<sdX>"
   echo "   -c, --chroot       enter chroot    </mnt/<sdX>"
   echo
@@ -114,6 +122,12 @@ do
             shift
             shift
             ;;
+        -p|--partitions)
+            PARTITIONING="YES"
+            TARGET="$2"
+            shift
+            shift
+            ;;
         --update-tui)
             UPDATE_TUI="YES"
             TARGET="$2"
@@ -149,7 +163,6 @@ do
             shift
             ;;         
         -h|--help)
-            about
             usage
             exit 0
             shift
@@ -173,15 +186,8 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 # root check 
 [ $(whoami) != root ] && echo "You must be root!" && exit 1
 
-# check for empty target
-#[ -z $TARGET ] && echo -e "You must specify a target. Determine the target USB device name with lsblk first!\n" && usage && exit 1
-
 # clean log 
 [ $LOG == true ] && [ -f $LOGFILE ] && rm $LOGFILE
-
-
-
-
 
 # ===============================================
 # FUNCTIONS
@@ -199,12 +205,14 @@ function error()
   exit 1
 }
 
+STEPCOUNTER=0
 function lognl()
 {
 	echo
 	echo "=========================================="
-	echo " STEP: $1"
+	echo " STEP $STEPCOUNTER: $1"
 	echo "=========================================="
+  STEPCOUNTER=$((STEPCOUNTER+1))
 }
 
 function err()
@@ -217,11 +225,21 @@ function err()
 	exit 1
 }
 
+function overview()
+{
+  lognl "Build Overview"
+  log "Starting build $(date +"%D %T")"
+  log ""
+  log "Packages:"
+  log "$PACKAGES"
+}
+
+
 #================ MOUNTING ===================#
 function unmounting()
 {
   lognl "Unmount ..."
-  mountpoint -q $MNT && umount -A ${TARGET}* || log "No device mounted!"
+  umount -A ${TARGET}* || log "No device mounted!"
 }
 
 function unmountall()
@@ -244,10 +262,15 @@ function partioning()
   lognl "Partioning ..." 
   log "Clear partion data and create new partion table!"
   sgdisk -Z ${TARGET}
-  sgdisk -o -n 1:0:+10M   -t 1:EF02 \
-            -n 2:0:+3G    -t 2:8300 \
-            -n 3:0:0      -t 3:8300 \
-            ${TARGET}
+
+  sgdisk -n 1:2048:+8M -t 1:EF02 ${TARGET}
+  sgdisk -n 2:0:+3G    -t 2:8300 ${TARGET}
+  sgdisk -n 3:0:0      -t 3:8300 ${TARGET}
+
+  #sgdisk -o -n 1:0:+10M   -t 1:EF02 \
+  #          -n 2:0:+3G    -t 2:8300 \
+  #          -n 3:0:0      -t 3:8300 \
+  #          ${TARGET}
 
   log "Wipe ${TARGET}"
   wipefs -a ${TARGET}2
@@ -307,7 +330,7 @@ function editpkglist()
   REPO_URL="http://de.archive.ubuntu.com/ubuntu"
   REPO_COMPONENTS="main universe multiverse"
   echo "" > "${ROOTFS}/etc/apt/sources.list"
-  echo "deb ${REPO_URL} ${REPO} ${REPO_COMPONENTS}" >> "${ROOTFS_PATH}/etc/apt/sources.list"
+  echo "deb ${REPO_URL} ${REPO} ${REPO_COMPONENTS}" >> "${ROOTFS}/etc/apt/sources.list"
 }
 
 function update()
@@ -322,22 +345,6 @@ function update()
   #   /usr/bin/apt-add-repository
 }
 
-function installpkg()
-{
-  chroot ${MNT} apt install -y $PACKAGES
-}
-
-
-function fstabgen()
-{
-  lognl "Generate fstab ..."
-  # Generate a new /etc/fstab using UUIDs as source identifiers
-  genfstab -U ${ROOTFS} > ${ROOTFS}/etc/fstab && \
-  cat ${ROOTFS}/etc/fstab && \
-  log "==> Generating fstab done!" || error "==> Generating fstab failed!"
-}
-
-
 function localecfg()
 {
   lognl "Configure time ..."
@@ -350,17 +357,79 @@ function localecfg()
   #chroot echo "KEYMAP=de-latin1" > /etc/vconsole.conf
 }
 
-#================ USER-CFG ===================#
-
 function hostcfg()
 {
   lognl "Configure hostname & hosts ..."
   echo ${HOSTNAME} > ${ROOTFS}/etc/hostname && log "==> Set hostname to ${HOSTNAME}" || err "Failed to set hostname!"
 
-cat <<EOF > ${ROOTFS}/etc/hosts
-127.0.0.1  localhost
-::1        localhost
-127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}"
+  cat <<EOF > ${ROOTFS}/etc/hosts
+  127.0.0.1  localhost
+  ::1        localhost
+  127.0.1.1  ${HOSTNAME}.localdomain  ${HOSTNAME}"
+EOF
+}
+
+
+function installpkg()
+{
+  #cp /etc/resolv.conf ${ROOTFS_PATH}/etc
+  chroot ${ROOTFS} apt update
+  chroot ${ROOTFS} apt install -y $PACKAGES
+
+  POLICYRC="${ROOTFS}/usr/sbin/policy-rc.d"
+  install -m 0644 ${WORK}/config/ubuntu/policy-rc.d ${POLICYRC}
+
+  chroot ${ROOTFS} apt -y dist-upgrade
+}
+
+function usercfg()
+{
+  echo -e "${PASSWORD}\n${PASSWORD}\n" | chroot ${ROOTFS} passwd root
+
+  chroot ${ROOTFS} adduser --gecos "" --disabled-password ${USER}
+  chroot ${ROOTFS} usermod -a -G sudo,video,audio,plugdev ${USER}
+
+  echo -e "${PASSWORD}\n${PASSWORD}\n" | chroot ${ROOTFS} passwd ${USER}
+}
+
+function sudoerscfg()
+{
+  chroot "${ROOTFS}" chmod +w /etc/sudoers
+  echo -e "\n## Polar Cutter Application Calls"       >> ${ROOTFS}/etc/sudoers
+  echo -e "ALL\tALL =(ALL) NOPASSWD: /bin/mount"      >> ${ROOTFS}/etc/sudoers
+  echo -e "ALL\tALL =(ALL) NOPASSWD: /bin/umount"     >> ${ROOTFS}/etc/sudoers
+  echo -e "ALL\tALL =(ALL) NOPASSWD: /bin/date"       >> ${ROOTFS}/etc/sudoers
+  echo -e "ALL\tALL =(ALL) NOPASSWD: /sbin/reboot"    >> ${ROOTFS}/etc/sudoers
+  echo -e "ALL\tALL =(ALL) NOPASSWD: /sbin/halt"      >> ${ROOTFS}/etc/sudoers
+  echo -e "ALL\tALL =(ALL) NOPASSWD: /sbin/hwclock"   >> ${ROOTFS}/etc/sudoers
+  echo -e "## ---\n"                                  >> ${ROOTFS}/etc/sudoers
+  chroot "${ROOTFS}" chmod -w /etc/sudoers
+}
+function sudocfg()
+{
+  lognl "==> Configure sudo ..."
+  chroot $ROOTFS echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo
+  chroot $ROOTFS groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
+  chroot $ROOTFS usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
+}
+
+function fstabgenSIMPLE()
+{
+  lognl "Generate fstab ..."
+  # Generate a new /etc/fstab using UUIDs as source identifiers
+  genfstab -U ${ROOTFS} > ${ROOTFS}/etc/fstab && \
+  cat ${ROOTFS}/etc/fstab && \
+  log "==> Generating fstab done!" || error "==> Generating fstab failed!"
+}
+
+function fstabgen()
+{
+  UUID_ROOTFS=$(/bin/lsblk -o UUID -n ${TAREGT}2)
+  UUID_DATAFS=$(/bin/lsblk -o UUID -n ${TARGET}3)
+
+  cat <<EOF > ${ROOTFS}/etc/fstab
+  UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
+  UUID=${UUID_DATAFS}  /data      vfat  uid=${USER},gid=${USER}  0  2
 EOF
 }
 
@@ -379,17 +448,13 @@ function efi_bootloader()
 function bootloader()
 {
   lognl "Install Bootloader"
-  chmod -x "${ROOTFS}/etc/grub.d/30_os-prober"
-  chroot  "${ROOTFS}" grub-install --force ${TARGET}
-  chroot "${ROOTFS}" update-grub
+  #chroot ${ROOTFS} chmod -x "${MNT}/etc/grub.d/30_os-prober"
+  chroot ${ROOTFS} grub-install --force --target=x86_64-efi --efi-directory /boot --recheck --removable
+  #chroot ${ROOTFS} grub-install --force --boot-directory=/boot ${TARGET }
+  chroot ${ROOTFS} update-grub
 }
 
-function newmkinitcpio()
-{
-  echo "TODO"
-}
-
-#================ END::BOOTLAODER ===================#
+#================ NETWORK ===================#
 
 function networkcfg()
 {
@@ -411,12 +476,14 @@ RouteMetric=10
 [IPv6AcceptRA]
 RouteMetric=10
 EOF
+log "etc/systemd/network/10-ethernet.network created"
 
   lognl "Enable networking services ..."
-  chroot systemctl enable systemd-networkd.service
-  chroot systemctl enable systemd-resolved.service
-  chroot ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 
-  chroot systemctl enable systemd-timesyncd.service
+  chroot $ROOTFS systemctl enable systemd-networkd.service
+  chroot $ROOTFS systemctl enable systemd-resolved.service
+  chroot $ROOTFS ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 
+  chroot $ROOTFS systemctl enable systemd-timesyncd.service
+  log "Network is enabled!"
 }
 
 
@@ -425,24 +492,18 @@ function wheelgrpcfg()
 {
   lognl "Configure wheelgroup"
   # Ensure the wheel group exists and add user to it."
-  chroot groupadd wheel
-  chroot usermod -aG wheel polar
+  chroot $ROOTFS groupadd wheel && log "add group 'wheel'!"
+  chroot $ROOTFS usermod -aG wheel $USER && log "add ${USER} to wheel group"
 }
 
-function sudocfg()
-{
-  lognl "==> Configure sudo ..."
-  chroot echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo
-  chroot groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
-  chroot usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
-}
+
 
 # TODO: 
 
 
 function rootpwcfg()
 {
-  chroot usermod --password $ROOTPW root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
+  chroot $ROOTFS usermod --password $ROOTPW root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
   echo -e "${ROOTPW}\n${ROOTPW}\n" | chroot ${ROOTFS} passwd root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
 }
 
@@ -465,21 +526,24 @@ function install_git_repo()
 
 function copytui()
 {
-  log "copy $WORK/tui to ${MNT}/opt"
-  cp -rv ${WORK}/tui  /opt
-  $CHROOT chown root  /opt/tui/*
-  $CHROOT chmod +x    /opt/tui/*
+  lognl "Copy TUI ..."
+  log "$WORK/tui to ${MNT}/opt"
+  cp -rpv ${WORK}/tui  ${MNT}/opt/tui
+  #chroot $ROOTFS chown root  ${MNT}/opt/tui/*
+  #chroot $ROOTFS chmod +x    ${MNT}/opt/tui/*
 
-  cp -rv --parents ${WORK}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
-                    ${MNT}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf       
+  log "" && log "Copy getty autologin.conf"
+  rsync -a ${WORK}/config/ubuntu/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
+                    ${MNT}/etc/systemd/system/
 }
 
 function automount()
 {
-# automount 
-cat <<EOF > ${ROOTFS}/etc/fstab
-UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
-UUID=${UUID_DATAFS}  /data      vfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
+  #TODO: make it work
+  # automount 
+  cat <<EOF > ${ROOTFS}/etc/fstab
+  UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
+  UUID=${UUID_DATAFS}  /data      exfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
 EOF
 }
 
@@ -505,23 +569,31 @@ log "tui getty autostart done!" && log ""
 _buildbasesys()
 {
   about
-  lognl "Starting build $(date +"%D %T")"
+  overview
   sleep 2
 
   ### prepare ###
-  unmountall
+  unmounting
   partioning
   mounting
 
   ### base system ###
   basesystem
-  config_full
+  mount_dev_proc_sys
 
-  ### config 1 ###
-  #fstabgen
-  #localecfg
-  #hostcfg
+  editpkglist
+  update
+  localecfg
+  
+  ## packages
+  installpkg
 
+  hostcfg
+  usercfg
+  sudoerscfg
+
+
+  fstabgen
   ### bootloader ###
   bootloader
 
@@ -531,20 +603,24 @@ _buildbasesys()
 _configure()
 {
   ### fresh mount ###
-  unmountall
-  mounting
-
+  mount_dev_proc_sys
 
   localecfg
   hostcfg
 
   $CHROOT locale-gen de_DE.UTF-8
 
-  networkcfg
-  networkenable
+  usercfg
+  #sudoerscfg
 
-  rootpwcfg
+  fstabgen
+  bootloader
+
+  networkcfg
+  #sudocfg
   wheelgrpcfg
+  rootpwcfg
+
 
   #sudocfg #TODO: dont works
   copytui
@@ -564,13 +640,13 @@ function fullbuild()
   _configure
 }
 
-basebuild()
+function basebuild()
 {
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
   _buildbasesys
 }
 
-updatebuild()
+function updatebuild()
 {
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
 
@@ -579,10 +655,16 @@ updatebuild()
   sleep 2
 
   basesystem
-  config_full
   bootloader
 }
 
+function just_partioning()
+{
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
+  unmounting
+  mounting
+  partioning
+}
 
 function update_tui()
 { 
@@ -593,15 +675,23 @@ function update_tui()
 
 function update_config()
 { 
-  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
-  unmounting && mounting ${TARGET}2 && \
-  _configure && log "Config is up to date!" || err "Failed to update config!"
+  [ -z ${TARGET} ] && log "You must specify a target!" && exit 1 
+  if mount | grep $MNT > /dev/null; then
+    _configure && log "Config is up to date!" || err "Failed to update config!"
+  else
+    # unmounting && \
+    mounting ${TARGET}2 && _configure
+  fi
 }
 
 function enter_chroot()
 { 
   [ -z ${TARGET} ] && log "You must specify a target!" && usage && exit 1
-  unmounting && mounting && chroot $ROOTFS /bin/bash
+   if mount | grep $MNT > /dev/null; then
+    chroot $ROOTFS /bin/bash
+  else
+    mounting ${TARGET}2 && chroot $ROOTFS /bin/bash
+  fi
 }
 
 
@@ -634,6 +724,10 @@ if [ ! -z $TARGET ]; then
     updatebuild
   fi
 
+  if [ $PARTITIONING == "YES" ]; then
+    just_partioning
+  fi
+
   if [ $UPDATE_TUI == "YES" ]; then
     update_tui
   fi
@@ -646,8 +740,7 @@ if [ ! -z $TARGET ]; then
     enter_chroot
   fi
 
-  log "=================================="
-  log "SUCCESS!"
+  lognl "SUCCESS!"
 
 else
   log "You must specify a argument with target!"
