@@ -15,8 +15,10 @@ LOGFILE="$WORK/build.log"
 source ${WORK}/version
 
 MNT="/mnt/archrootfs"
-BOOT="/mnt/usb/boot"
+BOOT="$MNT/boot"
 ROOTFS="$MNT"
+DATAFS="/mnt/datafs"
+
 
 PACKAGES=$(tr ' \n' ' ' < $WORK/config/arch/packages.txt)
 
@@ -25,7 +27,7 @@ CHROOTCMD="arch-chroot ${MNT}"
 
 HOSTNAME=superman
 USER=polar
-ROOTPW="evis32"
+PASSWORD="evis32"
 
 # ===============================================
 # CLI INTERFACE
@@ -40,6 +42,7 @@ BASEBUILD="NO"
 UPDATE_TUI="NO"
 UPDATE_CONFIG="NO"
 ENTER_CHROOT="NO"
+IMG2DATAFS="NO"
 TARGET=""
 
 function about() {
@@ -77,6 +80,8 @@ function usage()
   echo
   echo "   -t, --tui          copy tui files to </mnt/<sdX>"
   echo "   -c, --configure    update config on </mnt/<sdX>"
+
+  echo "   -i|--image2datafs  copy image files to data partition"
   echo
   echo "   -v, --version      Show $(basename $0) version"
   echo "   -h, --help         This help dialog"
@@ -127,10 +132,15 @@ do
             shift
             ;;
         -e|--efi)
-          ADDEFI="YES"
-          shift
-          ;;     
-        --chroot)
+            ADDEFI="YES"
+            shift
+            ;;     
+        -i|--img2datafs)
+            IMG2DATAFS="YES"
+            FROM="$2"
+            shift
+            ;;    
+        -x|--chroot)
             ENTER_CHROOT="YES"
             TARGET="$2"
             shift
@@ -232,13 +242,24 @@ function unmount()
   else "No automount helper found!" 
   fi
 
-  if mount | grep ${TARGET}2 > /dev/null; then
-    umount -f ${TARGET}2
-  elif mount | grep  ${TARGET}3 > /dev/null; then
-    umount -f ${TARGET}3
+  ## TODO: efi unmount
+  if [ $ADDEFI == YES ]; then
+    if mount | grep ${TARGET}3 > /dev/null; then
+      umount -f ${TARGET}3 && log "Unmount ${TARGET}2"
+    elif mount | grep  ${TARGET}3 > /dev/null; then
+      umount -f ${TARGET}2 && log "Unmount ${TARGET}3"
+    else
+      log "No device mounted!"
+    fi
   else
-    log "No device mounted!"
-  fi
+    if mount | grep ${TARGET}2 > /dev/null; then
+      umount -f ${TARGET}2 && log "Unmount ${TARGET}2"
+    elif mount | grep  ${TARGET}3 > /dev/null; then
+      umount -f ${TARGET}3 && log "Unmount ${TARGET}3"
+    else
+      log "No device mounted!"
+    fi
+  fi  
 }
 
 function mounting()
@@ -359,7 +380,7 @@ function fstabgen()
 {
   lognl "Generate fstab"
   log "==> Generate a new /etc/fstab using UUIDs as source identifiers"
-  genfstab -U /mnt/usb > /mnt/usb/etc/fstab && \
+  genfstab -U $ROOTFS > $ROOTFS/etc/fstab && \
   log "==> Generating fstab done!" || error "Failed to create fstab!"
 
   if [ $ADDEFI == YES ]; then
@@ -374,7 +395,7 @@ function fstabgen()
   cat <<EOF > ${MNT}/etc/fstab
   UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
   UUID=${UUID_DATAFS}  /data      vfat  uid=${USER},gid=${USER}  0  2
-#EOF
+EOF
 }
 
 
@@ -393,7 +414,7 @@ function localecfg()
   arch-chroot $ROOTFS locale-gen && log "Set language to german UTF8" || error "Failed to set language!"
 
   log "Set console keymap to de-latin1"
-  arch-chroot echo "KEYMAP=de-latin1" > /etc/vconsole.conf && log "Set console keymap to german" || error "Failed to set german keymap for console!"
+  arch-chroot $ROOTFS echo "KEYMAP=de-latin1" > /etc/vconsole.conf && log "Set console keymap to german" || error "Failed to set german keymap for console!"
 }
 
 function hostcfg()
@@ -462,25 +483,31 @@ EOF
   log "Enable network (systemd)"
   arch-chroot $ROOTFS systemctl enable systemd-networkd.service
   arch-chroot $ROOTFS systemctl enable systemd-resolved.service
-  arch-chroot $ROOTFS ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  #arch-chroot $ROOTFS ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
   arch-chroot $ROOTFS systemctl enable systemd-timesyncd.service
 }
 
 function permissionscfg()
 {
   lognl "Configure wheelgroup, sudoers, rootpw ... "
-  log "==> Configure wheelgroup ..."
+  log "==> add user ${USER}"
+  #arch-chroot $ROOTFS useradd --disable-password $USER && log "New user $USER was created" || error "Failed to create user $USER!"
+  if [ ! -z $(id -u $USER) ];then
+    log "User $USER already exists! Skip this step!"
+  else
+    arch-chroot $ROOTFS useradd -m $USER && log "New user $USER was created" || error "Failed to create user $USER!"
+  echo -e "${PASSWORD}\n${PASSWORD}\n" | arch-chroot $ROOTFS passwd $USER && log "Password for user ${USER} changed to ${PASSWORD}" || error "Failed to set user password!" 
+  fi
+
+  log "==> Configure wheelgroup & sudo ..."
   arch-chroot $ROOTFS groupadd wheel
-  arch-chroot $ROOTFS usermod -aG wheel polar
+  arch-chroot $ROOTFS usermod -aG wheel $USER
+  arch-chroot $ROOTFS echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo && log "Create sudoers!" || error "Failed to create sudoers!"
+  arch-chroot $ROOTFS groupadd sudo
+  arch-chroot $ROOTFS usermod -aG sudo,video,audio $USER
 
-  log "==> Configure sudo ..."
-  arch-chroot $ROOTFS  echo "%sudo ALL=(ALL) ALL" > /etc/sudoers.d/10-sudo && log "Create sudoers!" || error "Failed to create sudoers!"
-  arch-chroot $ROOTFS  groupadd sudo && log "==> Add sudo group" || error "==> Failed to add sudo group!"
-  arch-chroot $ROOTFS  usermod -aG sudo $USER && log "==> Add sudo for $USER" || error "==> Failed to add sudo to $USER!"
-  
-
-  $CHROOT usermod --password $ROOTPW root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
-  echo -e "${ROOTPW}\n${ROOTPW}\n" | $CHROOTCMD $MNT passwd root && log "==> Set root pw to ${ROOTPW}!" || error "==> Failed to set root pw!"
+  arch-chroot $ROOTFS usermod --password $PASSWORD root && log "==> Set root pw to ${PASSWORD}!" || error "==> Failed to set root pw!"
+  echo -e "${PASSWORD}\n${PASSWORD}\n" | arch-chroot $ROOTFS passwd root && log "==> Set root pw to ${PASSWORD}!" || error "==> Failed to set root pw!"
 }
 
 
@@ -501,15 +528,11 @@ function copytui()
   log "copy $FROM to $TO"
   rsync -rpv $FROM $TO
   
-  #rsync -rv $WORK/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
-  #          $ROOTFS/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf
-
   log "create tui autostart with service mode"
-  cat <<EOF > ${MNT}/etc/systemd/system/getty\@tty1.service.d/autologin.conf
-  [Service]
-  ExecStart=
-  ExecStart=-/usr/sbin/agetty --autologin root --login-program /root/tui/menu.sh --mode service --noissue --noclear %I $TERM
-EOF
+  mkdir -p $ROOTFS/etc/systemd/system/getty@tty1.service.d/ && log "Created agetty dir!" || error "Failed to create agetty dir!"
+  rsync -rpv $WORK/config/arch/etc/systemd/system/getty@tty1.service.d/autologin.conf \
+            $ROOTFS/etc/systemd/system/getty@tty1.service.d/autologin.conf && log "Create tui tty autostart" || error "Failed to create tui tty autostart!"
+
 }
 
 
@@ -581,9 +604,9 @@ enter_chroot()
 {
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
   if [ $ADDEFI == YES ]; then
-    unmount && mounting ${TARGET}3 && arch-chroot $ROOTFS
+    unmount && mounting ${TARGET}3 && lognl "Enter chroot" && arch-chroot $ROOTFS
   else
-    unmount && mounting ${TARGET}2 && arch-chroot $ROOTFS
+    unmount && mounting ${TARGET}2 && lognl "Enter chroot" && arch-chroot $ROOTFS
   fi  
 }
 
@@ -599,6 +622,19 @@ function install_packages()
   fi  
 }
 
+function copy_images()
+{
+  lognl "Copy image files to datafs"
+  TO=$DATAFS
+  mkdir -p $DATAFS
+  mount ${TARGET}3 $DATAFS
+  if [ ! -z $FROM ]; then
+    log "Copy image $FROM to $TO"
+    rsync -rv $FROM $TO
+  else
+    error "No path to file geven!"
+  fi  
+}
 
 
 #======================================#
@@ -628,11 +664,15 @@ if [ ! -z $TARGET ]; then
   fi
 
   if [ $UPDATE_CONFIG == "YES" ]; then
-      umount ${TARGET}3 && mounting ${TARGET}3 && updatecfg && log "Config is up to date!"
+      unmount && mounting ${TARGET}3 && updatecfg && log "Config is up to date!"
   fi
 
   if [ $ENTER_CHROOT == "YES" ]; then
       enter_chroot
+  fi
+
+  if [ $IMG2DATAFS == "YES" ]; then
+      copy_images
   fi
 
   log "=================================="
