@@ -2,6 +2,8 @@ linux
 linux-firmware 
 base 
 
+xf86-video-intel
+
 git 
 base-devel
 

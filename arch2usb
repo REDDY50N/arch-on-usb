@@ -18,7 +18,7 @@ MNT="/mnt/archrootfs"
 BOOT="/mnt/usb/boot"
 ROOTFS="$MNT"
 
-PACKAGES=$(tr ' \n' ' ' < $WORK/config/packages.txt)
+PACKAGES=$(tr ' \n' ' ' < $WORK/config/arch/packages.txt)
 
 CHROOT="arch-chroot ${ROOTFS}"
 CHROOTCMD="arch-chroot ${MNT}"
@@ -42,33 +42,46 @@ ENTER_CHROOT="NO"
 TARGET=""
 
 function about() {
-  echo""  
+  echo""
   echo "┌──────────────────────────────────────────────────┐"
-  echo "│ Arch Live on USB - Image Creator                 │"
+  echo "│      Arch Linux on USB Live System Builder       │"
   echo "│ ------------------------------------------------ │"
   echo "│ Author:   S. Reddy                               │"
   echo "│ Version:  ${ARCH_VERSION}                                    │"
   echo "│ ------------------------------------------------ │"
-  echo "│ Purpose:  Swiss Army Knife with tui for          │"
-  echo "│           arch install, backup & tools           │"
+  echo "│ Purpose: Builds an Arch Linux Live System as     │"
+  echo "│          Swiss Army Knife toolbox with tui for   │"
+  echo "│          flashing, backups, install & repair.    │"
   echo "└──────────────────────────────────────────────────┘"
   echo""
 }
 
-function usage() {
-    
+function usage() 
+{
   echo "┌──────────────────────────────────────────────────┐"
+  echo "  PURPOSE:"
+  echo "   Install an Arch Linux Live System on USB drive!"
+  echo
   echo "  USAGE: "
-  echo "    $(basename $0) [options]                   "
+  echo "    $(basename $0) [options] [target]               "
   echo
   echo "  OPTIONS:"
-  echo "   --fullbuild    build LiveCD on path </mnt/<sdX>"
-  echo "   --basebuild    build only a arch base system "
-  echo "   --fullwipe     wipe USB drive </mnt/<sdX>>"
-  echo "   --chroot       Enter chroot environment"
+  echo "   -f, --fullbuild    build complete system"
+  echo "   -b, --basebuild    build only base system"
+  echo "   -n, --nopart       build on existing partitions"
   echo
-  echo "   -v, --version  Show $(basename $0) version"
-  echo "   -h, --help     This help dialog"
+  echo "   -p, --partitions   create empty partition scheme"      
+  echo "   -w, --wipe-full    wipe USB drive  </mnt/<sdX>"
+  echo "   -x, --chroot       enter chroot    </mnt/<sdX>"
+  echo
+  echo "   -t, --tui          copy tui files to </mnt/<sdX>"
+  echo "   -c, --configure    update config on </mnt/<sdX>"
+  echo
+  echo "   -v, --version      Show $(basename $0) version"
+  echo "   -h, --help         This help dialog"
+  echo 
+  echo "  EXAMPLE:"
+  echo "   $(basename $0) --fullbild </mnt/sdX>"
   echo "└──────────────────────────────────────────────────┘"
   echo ""
 }
@@ -96,19 +109,19 @@ do
             shift
             shift
             ;;
-        --update-tui)
+        -t|--tui)
             UPDATE_TUI="YES"
             TARGET="$2"
             shift
             shift
             ;;
-        --update-config)
+        -c|--configure)
             UPDATE_CONFIG="YES"
             TARGET="$2"
             shift
             shift
             ;;
-        --fullwipe)
+        -w|--fullwipe)
             FULLWIPE="YES"
             TARGET="$2"
             shift
@@ -129,7 +142,7 @@ do
             version
             exit 0
             shift
-            ;;         
+            ;;
         -h|--help)
             about
             usage
@@ -152,13 +165,13 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 # ===============================================
 # CHECKS
 # ===============================================
-# root check 
+# root check
 [ $(whoami) != root ] && echo "You must be root!" && exit 1
 
 # check for empty target
 #[ -z $TARGET ] && echo -e "You must specify a target. Determine the target USB device name with lsblk first!\n" && usage && exit 1
 
-# clean log 
+# clean log
 [ $LOG == true ] && [ -f $LOGFILE ] && rm $LOGFILE
 
 
@@ -180,12 +193,14 @@ function error()
   exit 1
 }
 
+STEPCOUNTER=0
 function lognl()
 {
 	echo
 	echo "=========================================="
-	echo "STEP: $1"
+	echo " STEP $STEPCOUNTER: $1"
 	echo "=========================================="
+  STEPCOUNTER=$((STEPCOUNTER+1))
 }
 
 function err()
@@ -201,8 +216,8 @@ function err()
 
 #================ PARTITIONING ===================#
 function partioning()
-{ 
-  lognl "Partioning ..." 
+{
+  lognl "Partioning ..."
   #Create 10MB BIOS, 500MB EFI, 3GB for Linux fs and remaining space for image files
   sgdisk -Z ${TARGET}
   sgdisk -o -n 1:0:+10M   -t 1:EF02 \
@@ -247,7 +262,7 @@ function unmounting()
 function mounting()
 {
   lognl "Mounting ..."
-  
+
   mkdir -p "$MNT" && log "Creating mountpoint $MNT done!"
   mount ${TARGET}2 $MNT && log "Mounting ${TARGET}2 on $MNT done!" || error "Mounting ${TARGET}3 on $MNT failed!"
 
@@ -313,7 +328,7 @@ function localecfg()
 
 function hostcfg()
 {
-  $CHROOT echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}" 
+  $CHROOT echo ${HOSTNAME} > /etc/hostname && log "==> set hostname to ${HOSTNAME}"
 
 cat <<EOF > ${MNT}/etc/hosts
 127.0.0.1  localhost
@@ -358,16 +373,16 @@ local PATH=/etc/systemd/network/10-ethernet.network
 
 cat << EOF | $CHROOT
 printf "[Match] \
-\nName=en* \     
+\nName=en* \
 \nName=en* \
 \nName=eth* \
 \n \
 \n[Network] \
 \nDHCP=yes \
-\nIPv6PrivacyExtensions=yes \  
+\nIPv6PrivacyExtensions=yes \
 \n \
 \n[DHCPv4] \
-\nRouteMetric=10 \ 
+\nRouteMetric=10 \
 \n \
 \n[IPv6AcceptRA] \
 \nRouteMetric=10" > $PATH
@@ -384,7 +399,7 @@ cat << EOF | $CHROOT
 systemctl enable systemd-networkd.service
 
 systemctl enable systemd-resolved.service
-ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf 
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 
 systemctl enable systemd-timesyncd.service
 EOF
@@ -410,7 +425,7 @@ function sudocfg()
   log ""
 }
 
-# TODO: 
+# TODO:
 
 
 function rootpwcfg()
@@ -434,12 +449,12 @@ function copytui()
   $CHROOT chmod +x    /opt/tui/*
 
   cp -rv --parents ${WORK}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf \
-                    ${MNT}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf       
+                    ${MNT}/config/etc/systemd/system/getty\@tty1.service.d/autologin.conf
 }
 
 function automount()
 {
-# automount 
+# automount
 cat <<EOF > ${MNT}/etc/fstabF
 UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
 UUID=${UUID_DATAFS}  /data      vfat  uid=${IMAGE_USER},gid=${IMAGE_USER}  0  2
@@ -523,7 +538,7 @@ updatecfg()
 }
 
 function enter_chroot()
-{ 
+{
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
   unmounting && mounting ${TARGET}3
   $CHROOTCMD $MNT
@@ -535,7 +550,7 @@ function enter_chroot()
 #  MAIN
 # ============================================= #
 
-if [ ! -z $TARGET ]; then 
+if [ ! -z $TARGET ]; then
 
   if [ $UNMOUNT == "YES" ]; then
     umount -A ${TARGET}* && umount ${TARGET}* && lsblk
