@@ -365,6 +365,11 @@ agetty <user>
 
 https://wiki.archlinux.org/title/Greetd
 
+
+## fstab /data
+UUID="XXXX-FFFF-ZZZZ"   data auto rw,noatime 0 2
+
+
 ## 4. Copy image 2 datafs
 Mount the datafs:
 ```sh
@@ -373,5 +378,10 @@ mount /dev/sdX2 /mnt/datafs
 cp -v <from> <to>
 ```
 
+
+
+# TODO:
+rename Flashdrive and Foto
+F12 Bios Boot Menu
 
 

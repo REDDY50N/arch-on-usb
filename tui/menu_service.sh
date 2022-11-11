@@ -133,15 +133,14 @@ function main()
 function flash_service()
 {
     if mount | grep -w /data > /dev/null; then
-        filebrowser "Filebrowser"
+        STARTDIR="/data"
+        EXTENSION="*.gz"
+        filebrowser "Filebrowser" "$STARTDIR" "$EXTENSION"
         echo "Selected image: $FILE_SELECTED"
         echo "Selected image path: $FILE_SELECTED_PATH"
         flash_sda2 $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
     else
-        echo "No partition /data mounted!"
-        filebrowser "Testbrowser" "/home/polar"
-        echo "Selected image: $FILE_SELECTED"
-        echo "Selected image path: $FILE_SELECTED_PATH"
+        filebrowser "Testbrowser" 
         cat $FILE_SELECTED
     fi        
 }
@@ -176,14 +175,13 @@ function reboot_prompt()
 # ===========================
 # HELPERS - FILEBROWSER
 # ===========================
-STARTDIR="/data"
-EXTENSION="*.img.gz"
+
 
 function filebrowser
 {
     local TITLE=${1:-$MSG_INFO_TITLE}
-    local LOCAL_PATH=${2:-$STARTDIR}        #default: ${2:-$(pwd)}
-    local FILE_MASK=${3:-$EXTENSION}        #default: ${3:-"*"}
+    local LOCAL_PATH=${2:-$(pwd)}        #default: ${2:-$(pwd)}
+    local FILE_MASK=${3:-"*"}        #default: ${3:-"*"}
     local ALLOW_BACK=${4:-yes}
     local FILES=()
 
@@ -203,7 +201,7 @@ function filebrowser
 
     while true
     do
-        FILE_SELECTED=$(whiptail --clear --backtitle "$BACK_TITLE" --title "$TITLE" --menu "$LOCAL_PATH" 0 0 0 ${FILES[@]} 3>&1 1>&2 2>&3)
+        FILE_SELECTED=$(whiptail --clear --backtitle "$BACK_TITLE" --title "$TITLE" --menu "$LOCAL_PATH" 16 $WIDTH 0 ${FILES[@]} 3>&1 1>&2 2>&3)
 
         if [ -z "$FILE_SELECTED" ]; then
             return 1

@@ -237,13 +237,8 @@ function overview()
 function unmount()
 {
   lognl "Unmount (proper) ..."
-  if ps ax | grep -v grep | grep udiskie > /dev/null; then
-    log "Kill udiskie automount!"
-    pkill -9 -e -f udiskie 
-  elif ps ax | grep -v grep | grep udiskd > /dev/null; then  
-    pkill -9 -e -f udisksd
-  else "No automount helper found!" 
-  fi
+  ps ax | grep -v grep | grep udiskie > /dev/null && log "Kill udiskie automount!" && pkill -9 -e -f udiskie 
+  ps ax | grep -v grep | grep udiskd > /dev/null && pkill -9 -e -f udisksd
 
   ## TODO: efi unmount
   if [ $ADDEFI == YES ]; then
@@ -607,11 +602,7 @@ updatecfg()
 enter_chroot()
 {
   [ -z ${TARGET} ] && log "You must specify a target!" && exit 1
-  if [ $ADDEFI == YES ]; then
-    unmount && mounting ${TARGET}3 && lognl "Enter chroot" && arch-chroot $ROOTFS
-  else
-    unmount && mounting ${TARGET}2 && lognl "Enter chroot" && arch-chroot $ROOTFS
-  fi  
+  unmount && mounting ${TARGET}3 && lognl "Enter chroot" && arch-chroot $ROOTFS
 }
 
 function install_packages()

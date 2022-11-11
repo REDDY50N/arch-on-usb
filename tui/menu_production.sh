@@ -20,20 +20,8 @@ WIDTH=70
 # ===========================
 # COLORS WHIPTAIL
 # ===========================
-export STANDARD='
-    root=,blue
-    checkbox=,blue
-    entry=,blue
-    label=blue,
-    actlistbox=,blue
-    helpline=,blue
-    roottext=,blue
-    emptyscale=blue
-    disabledentry=blue,
-'
-
 export REDBLUE='
-    root=,red
+    root=,magenta
     checkbox=,blue
     entry=,blue
     label=blue,
@@ -96,8 +84,8 @@ export NEWT_COLORS=$REDBLUE
 # ===========================
 # MAIN MENU
 # ===========================
-MAIN_MENU_TITLE="Service Flash Menu"
-INFOTEXT="You will flash the entire system partition with a new image. Customer data will remain on the data partition.\n\n\n"
+MAIN_MENU_TITLE="Production Flash Menu"
+INFOTEXT="You will flash the entire hard drive with a new image.\n\n\n"
 
 function main()
 {
@@ -106,8 +94,8 @@ function main()
         --title "${MAIN_MENU_TITLE}" --menu \
         "${INFOTEXT}" \
         --ok-button "Select" 16 ${WIDTH} 0 \
-            1 "Flash (System Partition)" \
-            2 "Clone (Partition / Drive)" \
+            1 "Flash (full)" \
+            2 "Clone (full)" \
             3 "Shutdown" \
             3>&2 2>&1 1>&3 )
     case $CHOICE in
@@ -136,10 +124,15 @@ function main()
 function flash_production()
 {
     if mount | grep -w /data > /dev/null; then
-        filebrowser "Filebrowser"
-        echo "Selected image: $FILE_SELECTED"
-        echo "Selected image path: $FILE_SELECTED_PATH"
-        flash_sda $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
+        STARTDIR="/data"
+        EXTENSION="*.gz"
+        filebrowser "Filebrowser" "$STARTDIR" "$EXTENSION"
+        log "Selected image: $FILE_SELECTED" && log "Selected image path: $FILE_SELECTED_PATH"
+        if [ ! -z $FILE_SELECTED ]; then
+            flash_sda $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
+        else
+            log "Filebrowser - No file selected!" && infobox "Flashing successful. I am going to shutdown now!" && main
+        fi    
     else
         echo "Testmode ==> replace with error message!"
         echo "No partition /data mounted!"
@@ -226,7 +219,7 @@ function filebrowser
 
     while true
     do
-        FILE_SELECTED=$(whiptail --clear --backtitle "$BACK_TITLE" --title "$TITLE" --menu "$LOCAL_PATH" 0 0 0 ${FILES[@]} 3>&1 1>&2 2>&3)
+        FILE_SELECTED=$(whiptail --clear --backtitle "$BACK_TITLE" --title "$TITLE" --menu "$LOCAL_PATH" 16 $WIDTH 0 ${FILES[@]} 3>&1 1>&2 2>&3)
 
         if [ -z "$FILE_SELECTED" ]; then
             return 1
