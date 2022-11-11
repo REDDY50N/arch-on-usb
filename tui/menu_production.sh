@@ -107,16 +107,19 @@ function main()
         "${INFOTEXT}" \
         --ok-button "Select" 16 ${WIDTH} 0 \
             1 "Flash (System Partition)" \
-            2 "Shutdown" \
+            2 "Clone (Partition / Drive)" \
+            3 "Shutdown" \
             3>&2 2>&1 1>&3 )
-
     case $CHOICE in
     1)
-        flash_service
+        flash_production
         ;;
     2)
-        shutdown
+        clone
         ;;
+    3)
+        shutdown
+        ;;    
     *)
         exit
         ;;
@@ -130,18 +133,17 @@ function main()
 ### FLASH SYSTEM PARTITION ONLY ### 
 ### FOR SERVICE UPDATE ###
 
-function flash_service()
+function flash_production()
 {
     if mount | grep -w /data > /dev/null; then
         filebrowser "Filebrowser"
         echo "Selected image: $FILE_SELECTED"
         echo "Selected image path: $FILE_SELECTED_PATH"
-        flash_sda2 $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
+        flash_sda $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
     else
+        echo "Testmode ==> replace with error message!"
         echo "No partition /data mounted!"
-        filebrowser "Testbrowser" "/home/polar"
-        echo "Selected image: $FILE_SELECTED"
-        echo "Selected image path: $FILE_SELECTED_PATH"
+        filebrowser "Filebrowser"
         cat $FILE_SELECTED
     fi        
 }
@@ -156,13 +158,12 @@ function mount_home()
     log "Mounting $REPO to $TO ..."
 }
 
-# decompress and flash - system partition only
-function flash_sda2()
+function flash_sda()
 {
     FROM="$1"
-    TO=/dev/sda2
+    TO=/dev/sda
     log "Flashing $FROM to $TO ..."
-    cat $FROM | gunzip -c | partclone.ext4 -N -d -r -s - -o $TO && \
+    cat $FROM | gunzip -c | partclone.dd -N -d  -s - -o $TO && \
     log "Flashing $FROM to $TO succesful."
 }
 
@@ -174,16 +175,38 @@ function reboot_prompt()
 
 
 # ===========================
+# CLONE MENU
+# ===========================
+# clone & compress - system partition only
+function clone_sda2()
+{
+    FROM=/dev/sda2
+    TO=/mnt/usb/nprohd_sda2_$(date +%F_%H-%M-%S).img.gz
+    log "Cloning $FROM to $TO ..."
+    partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
+    log "Cloning $FROM to $TO succesful."
+}
+
+# clone & compress - whole drivw
+function clone_sda()
+{
+    # https://partclone.org/usage/partclone.dd.php
+    FROM=/dev/sda
+    TO=/mnt/usb/nprohd_sda_$(date +%F_%H-%M-%S).img.gz
+    log "Cloning $FROM to $TO ..."
+    partclone.dd -N -s $FROM | gzip -c -6 > $TO && \
+    log "Cloning $FROM to $TO succesful."
+}
+
+
+# ===========================
 # HELPERS - FILEBROWSER
 # ===========================
-STARTDIR="/data"
-EXTENSION="*.img.gz"
-
 function filebrowser
 {
     local TITLE=${1:-$MSG_INFO_TITLE}
-    local LOCAL_PATH=${2:-$STARTDIR}        #default: ${2:-$(pwd)}
-    local FILE_MASK=${3:-$EXTENSION}        #default: ${3:-"*"}
+    local LOCAL_PATH=${2:-$(pwd)}
+    local FILE_MASK=${3:-"*"} #.img.gz
     local ALLOW_BACK=${4:-yes}
     local FILES=()
 
@@ -228,11 +251,6 @@ function filebrowser
         fi
     done
 }
-
-
-
-
-
 
 # ===========================
 # HELPERS - LOG/ERROR
