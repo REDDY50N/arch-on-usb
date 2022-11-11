@@ -1,27 +1,25 @@
 #!/bin/bash
 
-set -e  # errexit = exit if a command exits with non zero 
-set -u  # treat undefined vars as erros 
-set -o pipefail
+#set -e  # errexit = exit if a command exits with non zero 
+#set -u  # treat undefined vars as erros 
+#set -o pipefail
 
 # ===========================
 # INCLUDE SCRIPTS / FILES
 # ===========================
 SCRIPTDIR="$(dirname $(readlink -f $0))"
 
-source $(dirname "$0")/bin/clone
-source $(dirname "$0")/bin/flash
-source $(dirname "$0")/bin/helpers.sh
-source $(dirname "$0")/bin/filebrowser.sh
+#source $(dirname "$0")/bin/clone
+#source $(dirname "$0")/bin/flash
+#source $(dirname "$0")/bin/helpers.sh
+#source $(dirname "$0")/bin/filebrowser.sh
 
 
 
 # ===========================
 # FILEBROWSER VARS
 # ===========================
-EXTENSION='.img.gz'
-STARTDIR="/mnt/usb" #STARTDIR="/mnt/data"
-STARTDIR="$HOME/Code" # for test
+
 
 # ===========================
 # LOGS
@@ -128,11 +126,11 @@ function main()
             2 "Shutdown" \
             3>&2 2>&1 1>&3 )
 
-    while true 
-    do
     case $CHOICE in
     1)
-        mount_home && flash_sda2 && reboot_prompt
+        #selection
+        selectimg
+        #mount_home && flash_sda2 && reboot_prompt
         ;;
     2)
         shutdown
@@ -141,7 +139,6 @@ function main()
         exit
         ;;
     esac
-    done
 }
 
 
@@ -180,31 +177,69 @@ function reboot_prompt()
 
 
 # ===========================
-# HELPERS
+# HELPERS - FILEBROWSER
 # ===========================
-function selectimg()
+function filebrowser
 {
-    _IMG=""
+    local TITLE=${1:-$MSG_INFO_TITLE}
+    local LOCAL_PATH=${2:-$(pwd)}
+    local FILE_MASK=${3:-"*"} #.img.gz
+    local ALLOW_BACK=${4:-yes}
+    local FILES=()
 
-    filebrowser "Select a image to flash" "$STARTDIR"
+    [ "$ALLOW_BACK" != "no" ] && FILES+=(".." "..")
 
-    exitstatus=$?
-    if [ $exitstatus == 0 ]; then
-        if [ "$selection" == "" ]; then
-            [[ "$exitstatus" == 1 ]] && main
+    # First add folders
+    for DIR in $(find $LOCAL_PATH -maxdepth 1 -mindepth 1 -type d -printf "%f " 2> /dev/null)
+    do
+        FILES+=($DIR "folder")
+    done
+
+    # Then add the files
+    for FILE in $(find $LOCAL_PATH -maxdepth 1 -type f -name "$FILE_MASK" -printf "%f %s " 2> /dev/null)
+    do
+        FILES+=($FILE)
+    done
+
+    while true
+    do
+        FILE_SELECTED=$(whiptail --clear --backtitle "$BACK_TITLE" --title "$TITLE" --menu "$LOCAL_PATH" 38 80 30 ${FILES[@]} 3>&1 1>&2 2>&3)
+
+        if [ -z "$FILE_SELECTED" ]; then
+            return 1
         else
-            _IMG=$selection
-            log "Image selected: $selection => IMG: $_IMG"
+            if [ "$FILE_SELECTED" = ".." ] && [ "$ALLOW_BACK" != "no" ]; then
+                return 0
+
+            elif [ -d "$LOCAL_PATH/$FILE_SELECTED" ] ; then
+                if filebrowser "$TITLE" "$LOCAL_PATH/$FILE_SELECTED" "$FILE_MASK" "yes" ; then
+                    if [ "$FILE_SELECTED" != ".." ]; then
+                        return 0
+                    fi
+                else
+                    return 1
+                fi
+
+            elif [ -f "$LOCAL_PATH/$FILE_SELECTED" ] ; then
+                FILE_SELECTED="$FILE_SELECTED"
+                FILE_SELECTED_PATH="$LOCAL_PATH/$FILE_SELECTED"
+                return 0
+            fi
         fi
-    else
-        errorbox "Error selecting flash image!" && main
-    fi
+    done
 }
 
 
 
+function selectimg()
+{
+    filebrowser "Testbrowser" 
+    echo "Selected image: $FILE_SELECTED"
+    echo "Selected image path: $FILE_SELECTED_PATH"
+}
+
 # ===========================
-# HELPERs - LOG/ERROR
+# HELPERS - LOG/ERROR
 # ===========================
 
 ### box functions ###
@@ -255,4 +290,3 @@ function reboot()
 # MAIN LOOP
 # ===========================
 main
-
