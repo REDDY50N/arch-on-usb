@@ -19,11 +19,7 @@ BOOT="$MNT/boot"
 ROOTFS="$MNT"
 DATAFS="/mnt/datafs"
 
-
 PACKAGES=$(tr ' \n' ' ' < $WORK/config/arch/packages-minimal.txt)
-
-CHROOT="arch-chroot ${ROOTFS}"
-CHROOTCMD="arch-chroot ${MNT}"
 
 HOSTNAME=superman
 USER=polar
@@ -532,19 +528,7 @@ function permissionscfg()
 # https://serverfault.com/questions/1030047/how-do-i-disable-automatic-login-in-a-debian-live-standard-image/1030050#1030050
 # https://unix.stackexchange.com/questions/669327/gettytty1-serivce-service-is-permanently-restarting-debian-11-live-iso
 
-function copytui()
-{
-  FROM=${WORK}/tui
-  TO=${MNT}/root
-  log "copy $FROM to $TO"
-  rsync -rpv $FROM $TO
-  
-  log "create tui autostart with service mode"
-  mkdir -p $ROOTFS/etc/systemd/system/getty@tty1.service.d/ && log "Created agetty dir!" || error "Failed to create agetty dir!"
-  rsync -rpv $WORK/config/arch/etc/systemd/system/getty@tty1.service.d/autologin.conf \
-            $ROOTFS/etc/systemd/system/getty@tty1.service.d/autologin.conf && log "Create tui tty autostart" || error "Failed to create tui tty autostart!"
 
-}
 
 
 
@@ -574,10 +558,7 @@ fullbuild()
   networkcfg
   permissionscfg
 
-  #
-  # calls function for update; avoid duplication
-  # 
-  updatecfg
+  copytui
 }
 
 basebuild()
@@ -654,6 +635,33 @@ function copy_images()
   umount -A ${TARGET}3 || umount $DATAFS || log "Nothing to unmount!"
 }
 
+function copytui()
+{
+  lognl "Copy flash/clone tui app"
+  FROM=${WORK}/tui/*
+  TO=${MNT}/opt
+  log "copy $FROM to $TO"
+  rsync -rpv $FROM $TO
+  
+  lognl "Create tui app autostart"
+  log "==> create tui autostart with service mode"
+  mkdir -p $ROOTFS/etc/systemd/system/getty@tty1.service.d/ && log "Created agetty dir!" || error "Failed to create agetty dir!"
+
+  # TODO:
+  # switch service /production
+
+  # autologin.conf overrides agetty@tty1.service
+  cat <<EOF > $ROOTFS/etc/systemd/system/getty@tty1.service.d/autologin.conf
+  [Service]
+  ExecStart=
+  ExecStart=-/sbin/agetty --autologin root --login-program /opt/menu_production.sh %I $TERM
+EOF
+  
+  # enable systemd service
+  arch-chroot $ROOTFS ln -sf /usr/lib/systemd/system/getty\@.service /etc/systemd/system/multi-user.target.wants/agetty\@tty1.service && \
+  log "Symlink created - agetty systemd service should be enabled"
+}
+
 
 #======================================#
 #  MAIN
@@ -678,7 +686,7 @@ if [ ! -z $TARGET ]; then
   fi
 
   if [ $UPDATE_TUI == "YES" ]; then
-      umount ${TARGET}3 && mounting ${TARGET}3 && cp -rv tui /mnt/usb/root/tui
+    copytui 
   fi
 
   if [ $UPDATE_CONFIG == "YES" ]; then
