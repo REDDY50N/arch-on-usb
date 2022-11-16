@@ -14,13 +14,13 @@ WORK="$(dirname $(readlink -f $0))"
 LOGFILE="$WORK/build.log"
 source ${WORK}/version
 
-MNT="/mnt/archrootfs"
+MNT="/mnt/usb"
 BOOT="$MNT/boot"
 ROOTFS="$MNT"
 DATAFS="/mnt/datafs"
 
 
-PACKAGES=$(tr ' \n' ' ' < $WORK/config/arch/packages.txt)
+PACKAGES=$(tr ' \n' ' ' < $WORK/config/arch/packages-minimal.txt)
 
 CHROOT="arch-chroot ${ROOTFS}"
 CHROOTCMD="arch-chroot ${MNT}"
@@ -62,34 +62,38 @@ function about() {
 
 function usage() 
 {
-  echo "┌──────────────────────────────────────────────────┐"
-  echo "  PURPOSE:"
-  echo "   Install an Arch Linux Live System on USB drive!"
-  echo
-  echo "  USAGE: "
-  echo "    $(basename $0) [options] [target]               "
-  echo
-  echo "  OPTIONS:"
-  echo "   -f, --fullbuild    build complete system"
-  echo "   -b, --basebuild    build only base system"
-  echo "   -n, --nopart       build on existing partitions"
-  echo
-  echo "   -p, --partitions   create empty partition scheme"      
-  echo "   -w, --wipe-full    wipe USB drive  </mnt/<sdX>"
-  echo "   -x, --chroot       enter chroot    </mnt/<sdX>"
-  echo
-  echo "   -t, --tui          copy tui files to </mnt/<sdX>"
-  echo "   -c, --configure    update config on </mnt/<sdX>"
+cat <<EOF
+┌──────────────────────────────────────────────────┐
+  PURPOSE:"
+  Install an Arch Linux Live System on USB drive!
+  
+  USAGE:
+    $(basename $0) [options] [target]               
+  
+  OPTIONS:"
+    -f, --fullbuild    build complete system
+    -b, --basebuild    build only base system
+    -n, --nopart       build on existing partitions
+  
+    -p, --partitions   create empty partition scheme    
+    -w, --wipe-full    wipe USB drive  </dev/<sdX>
+    -x, --chroot       enter chroot    </dev/<sdX>
+  
+    -t, --tui          copy tui files to </dev/<sdX>
+    -c, --configure    update config on  </dev/<sdX>
 
-  echo "   -i|--image2datafs  copy image files to data partition"
-  echo
-  echo "   -v, --version      Show $(basename $0) version"
-  echo "   -h, --help         This help dialog"
-  echo 
-  echo "  EXAMPLE:"
-  echo "   $(basename $0) --fullbild </mnt/sdX>"
-  echo "└──────────────────────────────────────────────────┘"
-  echo ""
+    -i, --img2data     copy image files to data partition
+    -u, --unmount      unmount all mounted on </dev/sdX>
+  
+    -v, --version      Show $(basename $0) version
+    -h, --help         This help dialog"
+   
+   EXAMPLE:
+    $(basename $0) --fullbild </dev/sdX>"
+    $(basename $0) -w -f </dev/sdX>"
+   └──────────────────────────────────────────────────┘
+  
+EOF
 }
 
 function version()
@@ -192,7 +196,7 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 # ===============================================
 # FUNCTIONS
 # ===============================================
-STEPCOUNTER=0
+STEPCOUNTER=1
 function lognl()
 {
 	echo
@@ -217,7 +221,9 @@ function error()
 
 function overview()
 {
-  lognl "Build Overview"
+  echo "=========================================="
+	echo " OVERVIEW "
+	echo "=========================================="
   log "Starting build $(date +"%D %T")"
   log ""
   log "Packages:"
@@ -295,7 +301,7 @@ function partioning()
     sgdisk -o \
       -n 1:0:+10M   -t 1:EF02 \
       -n 2:0:+500M  -t 2:EF00 \
-      -n 3:0:+3G    -t 3:8300 \
+      -n 3:0:+4G    -t 3:8300 \
       -n 4:0:0      -t 4:8300 \
       ${TARGET}
 
@@ -307,7 +313,7 @@ function partioning()
     log "Format the 500MB EFI system partition with a FAT32 filesystem"
     mkfs.fat -F32 ${TARGET}2 && log "Creating ${TARGET}2 fs done!" || error "Failed to create FAT /boot"
     log "Format the Linux partition with an ext4 filesystem"
-    mkfs.ext4 -q ${TARGET}3 && log "Creating ${TARGET}3 fs done!" error "Failed to create ext4 /rootfs"
+    mkfs.ext4 -q ${TARGET}3 -L rootfs && log "Creating ${TARGET}3 fs done!" error "Failed to create ext4 /rootfs"
     log "Format the data partition with an exfat/ntfs filesystem"
     mkfs.exfat ${TARGET}4 --volume-label=data -v && log "Creating ${TARGET}4 fs done!" error "Failed to create /data"
   else
@@ -321,7 +327,6 @@ function partioning()
     wipefs -a ${TARGET}2
     wipefs -a ${TARGET}3
 
-    lognl "Formating ..."
     lognl "Formating ..."
     log "Format the Linux partition with an ext4 filesystem"
     mkfs.ext4 -q ${TARGET}2 && log "Creating ${TARGET}2 fs done!" error "Failed to create ext4 /rootfs"
@@ -391,9 +396,17 @@ function fstabgen()
 
   # automount
   cat <<EOF > ${MNT}/etc/fstab
-  UUID=${UUID_ROOTFS}  /          ext4  errors=remount-ro  0  1
-  UUID=${UUID_DATAFS}  /data      vfat  uid=${USER},gid=${USER}  0  2
+  UUID=${UUID_ROOTFS}     /      ext4  rw,noatime      0 1
+  UUID=${UUID_DATAFS}     /data  auto  rw,noatime      0 2
 EOF
+
+  if [ $ADDEFI == YES ]; then
+    UUID_BOOT=$(/bin/lsblk -o UUID -n ${TARGET}2 )
+
+    cat <<EOF >> ${MNT}/etc/fstab
+    UUID=${UUID_BOOT}   /boot  vfat  rw,noatime,...  0 2
+EOF
+  fi
 }
 
 
@@ -560,12 +573,17 @@ fullbuild()
   create_initial_ramdisk
   networkcfg
   permissionscfg
+
+  #
+  # calls function for update; avoid duplication
+  # 
+  updatecfg
 }
 
 basebuild()
 {
   #
-  # Build base system without partioning
+  # Build base system without partioning and without config
   # 
   about && overview && sleep 2
 
@@ -626,9 +644,9 @@ function copy_images()
   # TODO: if EFI; the TARGET4
   mount ${TARGET}3 $DATAFS
 
-  if [ ! -z $FROM ]; then
+  if [ ! -z $$1 ]; then
     log "Copy image $FROM to $TO"
-    rsync -rv $FROM $TO
+    rsync -rv $$1 $TO
   else
     error "No path to file geven!"
   fi
@@ -679,5 +697,5 @@ if [ ! -z $TARGET ]; then
   log "DONE!"
 
 else
-  log "You must specify a argument with target!"
+  log "You must specify a target!"
 fi

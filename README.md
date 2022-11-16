@@ -14,19 +14,12 @@ The tui menu is made with whiptail (libnewt on arch).
 This repo consists of two parts:
 
 1. Linux Image Creator:
-- Build the Arch Linux Live System directly on USB with `usbdeploy` script.
-- Usage: `usbdepoy`
+- Build the Arch Linux Live System directly on USB with `arch2usb` script.
+- Usage: `arch2usb -h`
 
 2. TUI Application:
-
-    Run the tui application in different modes:
-- Service:        `tui/menu.sh --mode service`
-- Production:     `tui/menu.sh --mode production`
-- Develop:        `tui/menu.sh --mode develop`
-
 - Service         - just allowed flash system partition (sdb2)
 - Producution     - allowed to flash the whole system (sda)
-- Develop         - has additional tools for many purposes
 
 ### TUI Functions
 - Clone             - clone functions using patclone

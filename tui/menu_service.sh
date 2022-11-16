@@ -138,7 +138,7 @@ function flash_service()
         filebrowser "Filebrowser" "$STARTDIR" "$EXTENSION"
         echo "Selected image: $FILE_SELECTED"
         echo "Selected image path: $FILE_SELECTED_PATH"
-        flash_sda2 $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
+        flash_sda2 $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to reboot now!" && reboot
     else
         filebrowser "Testbrowser" 
         cat $FILE_SELECTED
@@ -164,13 +164,6 @@ function flash_sda2()
     cat $FROM | gunzip -c | partclone.ext4 -N -d -r -s - -o $TO && \
     log "Flashing $FROM to $TO succesful."
 }
-
-function reboot_prompt()
-{
-    infobox "Flashing was successful. Reboot now!"
-    reboot
-}
-
 
 # ===========================
 # HELPERS - FILEBROWSER

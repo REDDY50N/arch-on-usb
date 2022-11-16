@@ -2,10 +2,9 @@ linux
 linux-firmware 
 base 
 
-xf86-video-intel
-
-git 
-base-devel
+#xf86-video-intel
+#git 
+#base-devel
 
 grub 
 efibootmgr 
@@ -13,37 +12,36 @@ efibootmgr
 polkit 
 vim 
 sudo 
-pv 
-
+ 
 fsarchiver 
-clonezilla 
+#clonezilla 
 partclone 
-partimage 
+#partimage 
 libnewt 
 
-fff 
+#fff 
 ranger 
-tmux 
-nmon
+#tmux 
+#nmon
 
-dhclient
-dhcpcd
-systemd-resolvconf
+#dhclient
+#dhcpcd
+#systemd-resolvconf
 
 dmidecode
 intel-ucode
 
-
-exfatprogs
-ntfs-3g
+#exfatprogs
+#ntfs-3g
 usbutils
 
-zsh
+#zsh
 tmux
 terminus-font
 
 diffutils
 gptfdisk
-fsarchiver
-nmap
-ddrescue
+#fsarchiver
+#nmap
+#ddrescue
+xf86-video-fbdev
