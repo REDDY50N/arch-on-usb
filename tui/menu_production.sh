@@ -17,6 +17,14 @@ ERRORLOG="${SCRIPTDIR}/error.log"
 BACKTITLE="Geshem Flasher 1.0"
 WIDTH=70
 
+
+# ===========================
+# FRAMEBUFFER RESOLUTION
+# ===========================
+# https://man.archlinux.org/man/fbset.8.en
+# Otherwise default 640x480 is used
+fbset 1920 1080 1920 1080 32
+
 # ===========================
 # COLORS WHIPTAIL
 # ===========================
@@ -95,13 +103,40 @@ function main()
         "${INFOTEXT}" \
         --ok-button "Select" 16 ${WIDTH} 0 \
             1 "Flash (full)" \
-            2 "Clone (full)" \
-            3 "Clone (system only)" \
-            4 "Shutdown" \
+            2 "Expert Mode" \
+            3 "Shutdown" \
             3>&2 2>&1 1>&3 )
     case $CHOICE in
     1)
         flash_production
+        ;;
+    2)
+        expert_mode
+        ;;
+    3)
+        shutdown
+        ;;       
+    *)
+        exit
+        ;;
+    esac
+}
+
+function expert_mode()
+{
+    CHOICE=$(
+        whiptail --backtitle "${BACKTITLE}" \
+        --title "Expert Mode" --menu \
+        "This mode is mainly for developers!" \
+        --ok-button "Select" 16 ${WIDTH} 0 \
+            1 "Clonzilla" \
+            2 "Clone (full)" \
+            3 "Clone (system-only)" \
+            4 "Shutdown" \
+            3>&2 2>&1 1>&3 )
+    case $CHOICE in
+    1)
+        clonezilla && main
         ;;
     2)
         clone_sda
@@ -119,6 +154,7 @@ function main()
 }
 
 
+
 # ===========================
 # FLASH MENU
 # ===========================
@@ -127,15 +163,16 @@ function main()
 
 function flash_production()
 {
+    FILE_SELECTED=""
     if mount | grep -w /data > /dev/null; then
         STARTDIR="/data"
         EXTENSION="*.gz"
         filebrowser "Filebrowser" "$STARTDIR" "$EXTENSION"
         log "Selected image: $FILE_SELECTED" && log "Selected image path: $FILE_SELECTED_PATH"
         if [ ! -z $FILE_SELECTED ]; then
-            flash_sda $FILE_SELECTED_PATH && infobox "Flashing successful. I am going to shutdown now!" && shutdown
+            flash_sda $FILE_SELECTED_PATH && infobox "Flashing complete. Please check if Box-PC is booting. I am going to shutdown now!" && shutdown
         else
-            log "Filebrowser - No file selected!" && infobox "Flashing successful. I am going to shutdown now!" && main
+            log "Filebrowser - No file selected!" && infobox "Filebrowser - No file selected!" && main
         fi    
     else
         errorbox "Data partition (/data) is not mounted! Contact the developer!"
@@ -296,7 +333,7 @@ function shutdown()
 function reboot()
 {
     if (whiptail --title "Reboot" --yesno "I am going to reboot now ..." 0 0 0); then
-        /sbin/reboot
+        /sbin/reboot 
     else
         main
     fi
