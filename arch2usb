@@ -518,21 +518,6 @@ function permissionscfg()
 }
 
 
-  
-
-#======================================#
-# TUI MENU
-#======================================#
-#================ TUI CONFIG ===================#
-# Autostart does not work:
-# https://serverfault.com/questions/1030047/how-do-i-disable-automatic-login-in-a-debian-live-standard-image/1030050#1030050
-# https://unix.stackexchange.com/questions/669327/gettytty1-serivce-service-is-permanently-restarting-debian-11-live-iso
-
-
-
-
-
-
 #======================================#
 # MAIN FUNCTIONS
 #======================================#
@@ -637,6 +622,7 @@ function copy_images()
 
 function copytui()
 {
+  unmount && mounting
   lognl "Copy flash/clone tui app"
   FROM=${WORK}/tui/*
   TO=${MNT}/opt

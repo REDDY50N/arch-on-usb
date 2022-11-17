@@ -134,10 +134,7 @@ function flash_production()
             log "Filebrowser - No file selected!" && infobox "Flashing successful. I am going to shutdown now!" && main
         fi    
     else
-        echo "Testmode ==> replace with error message!"
-        echo "No partition /data mounted!"
-        filebrowser "Filebrowser"
-        cat $FILE_SELECTED
+        errorbox "Data partition (/data) is not mounted! Contact the developer!"
     fi        
 }
 
@@ -183,12 +180,16 @@ function clone_sda2()
 # clone & compress - whole drivw
 function clone_sda()
 {
-    # https://partclone.org/usage/partclone.dd.php
-    FROM=/dev/sda
-    TO=/mnt/usb/nprohd_sda_$(date +%F_%H-%M-%S).img.gz
-    log "Cloning $FROM to $TO ..."
-    partclone.dd -N -s $FROM | gzip -c -6 > $TO && \
-    log "Cloning $FROM to $TO succesful."
+    if mount | grep -w /data > /dev/null; then
+        # https://partclone.org/usage/partclone.dd.php
+        FROM=/dev/sda
+        TO=/data/nprohd_sda_$(date +%F_%H-%M-%S).img.gz
+        log "Cloning $FROM to $TO ..."
+        partclone.dd -N -s $FROM | gzip -c -6 > $TO && \
+        log "Cloning $FROM to $TO succesful."   
+    else
+        errorbox "Data partition (/data) is not mounted! Contact the developer!"
+    fi   
 }
 
 
