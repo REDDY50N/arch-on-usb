@@ -67,19 +67,19 @@ cat <<EOF
     $(basename $0) [options] [target]               
   
   OPTIONS:"
+    -w, --wipe-full    wipe USB drive  </dev/<sdX>
+
     -f, --fullbuild    build complete system
     -b, --basebuild    build only base system
-    -n, --nopart       build on existing partitions
-  
-    -p, --partitions   create empty partition scheme    
-    -w, --wipe-full    wipe USB drive  </dev/<sdX>
-    -x, --chroot       enter chroot    </dev/<sdX>
-  
+
+    -p, --partitions   create empty partition scheme  
+
     -t, --tui          copy tui files to </dev/<sdX>
     -c, --configure    update config on  </dev/<sdX>
-
     -i, --img2data     copy image files to data partition
-    -u, --unmount      unmount all mounted on </dev/sdX>
+
+    -x, --chroot       enter chroot   </dev/<sdX>
+    -u, --unmount      unmount all on </dev/sdX>
   
     -v, --version      Show $(basename $0) version
     -h, --help         This help dialog"
@@ -88,7 +88,6 @@ cat <<EOF
     $(basename $0) --fullbild </dev/sdX>"
     $(basename $0) -w -f </dev/sdX>"
    └──────────────────────────────────────────────────┘
-  
 EOF
 }
 
@@ -421,7 +420,7 @@ function localecfg()
   arch-chroot $ROOTFS locale-gen && log "Set language to german UTF8" || error "Failed to set language!"
 
   log "Set console keymap to de-latin1"
-  arch-chroot $ROOTFS echo "KEYMAP=de-latin1" > /etc/vconsole.conf && log "Set console keymap to german" || error "Failed to set german keymap for console!"
+  echo KEYMAP=de-latin1 > $ROOTFS/etc/vconsole.conf && log "Set console keymap to german" || error "Failed to set german keymap for console!"
 }
 
 function hostcfg()

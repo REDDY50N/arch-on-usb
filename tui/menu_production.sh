@@ -96,16 +96,20 @@ function main()
         --ok-button "Select" 16 ${WIDTH} 0 \
             1 "Flash (full)" \
             2 "Clone (full)" \
-            3 "Shutdown" \
+            3 "Clone (system only)" \
+            4 "Shutdown" \
             3>&2 2>&1 1>&3 )
     case $CHOICE in
     1)
         flash_production
         ;;
     2)
-        clone
+        clone_sda
         ;;
     3)
+        clone_sda2
+        ;;    
+    4)
         shutdown
         ;;    
     *)
@@ -170,11 +174,15 @@ function reboot_prompt()
 # clone & compress - system partition only
 function clone_sda2()
 {
-    FROM=/dev/sda2
-    TO=/mnt/usb/nprohd_sda2_$(date +%F_%H-%M-%S).img.gz
-    log "Cloning $FROM to $TO ..."
-    partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
-    log "Cloning $FROM to $TO succesful."
+    if mount | grep -w /data > /dev/null; then
+        FROM=/dev/sda2
+        TO=/mnt/usb/nprohd_sda2_$(date +%F_%H-%M-%S).img.gz
+        log "Cloning $FROM to $TO ..."
+        partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
+        log "Cloning $FROM to $TO succesful." 
+    else
+        errorbox "Data partition (/data) is not mounted! Contact the developer!"
+    fi  
 }
 
 # clone & compress - whole drivw
@@ -279,7 +287,7 @@ function errorlog()
 function shutdown()
 {
     if (whiptail --title "Shutdown" --yesno "I am going to shut down now ..." 0 0 0); then
-        /sbin/poweroff
+        /sbin/poweroff || /sbin/shutdown now
     else
         main
     fi
