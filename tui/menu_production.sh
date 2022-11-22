@@ -14,7 +14,7 @@ TUILOG="${SCRIPTDIR}/tui.log"
 ERRORLOG="${SCRIPTDIR}/error.log"
 
 # TUI VARS
-BACKTITLE="Geshem Flasher 1.0"
+BACKTITLE="Geshem Flasher"
 WIDTH=70
 
 
@@ -23,13 +23,15 @@ WIDTH=70
 # ===========================
 # https://man.archlinux.org/man/fbset.8.en
 # Otherwise default 640x480 is used
-fbset 1920 1080 1920 1080 32
+
+# TODO: reload - works only properly after "Cancel"
+fbset -g 1920 1080 1920 1080 32
 
 # ===========================
 # COLORS WHIPTAIL
 # ===========================
 export REDBLUE='
-    root=,magenta
+    root=,brightblue
     checkbox=,blue
     entry=,blue
     label=blue,
@@ -39,10 +41,12 @@ export REDBLUE='
     emptyscale=blue
     disabledentry=blue,
 '
+### Colors ###
+# red, green, brown, blue, magenta, cyan, yellow
+# brightred, brightcyan, brightblue, brightgreen, brightmagenta
+# black, white, gray, lightgray
 
-# Hint:
 ### Options
-# root = background: blue
 #root                  root fg, bg
 #border                border fg, bg
 #window                window fg, bg
@@ -66,24 +70,6 @@ export REDBLUE='
 #compactbutton         compact button fg, bg
 #actsellistbox         active & sel listbox
 #sellistbox            selected listbox
-
-### Colors ###
-#color0  or black
-#color1  or red
-#color2  or green
-#color3  or brown
-#color4  or blue
-#color5  or magenta
-#color6  or cyan
-#color7  or lightgray
-#color8  or gray
-#color9  or brightred
-#color10 or brightgreen
-#color11 or yellow
-#color12 or brightblue
-#color13 or brightmagenta
-#color14 or brightcyan
-#color15 or white
 
 # chosen color profile
 export NEWT_COLORS=$REDBLUE
@@ -132,20 +118,20 @@ function expert_mode()
             1 "Clonzilla" \
             2 "Clone (full)" \
             3 "Clone (system-only)" \
-            4 "Shutdown" \
+            4 "Terminal" \
             3>&2 2>&1 1>&3 )
     case $CHOICE in
     1)
         clonezilla && main
         ;;
     2)
-        clone_sda
+        clone_full # clone_sda
         ;;
     3)
-        clone_sda2
+        clone_system # clone_sda2
         ;;    
     4)
-        shutdown
+        tmux && main
         ;;    
     *)
         exit
@@ -189,13 +175,45 @@ function mount_home()
     log "Mounting $REPO to $TO ..."
 }
 
-function flash_sda()
+function flash_full()
 {
-    FROM="$1"
-    TO=/dev/sda
-    log "Flashing $FROM to $TO ..."
-    cat $FROM | gunzip -c | partclone.dd -N -d  -s - -o $TO && \
-    log "Flashing $FROM to $TO succesful."
+    if mount | grep -w /data > /dev/null; then
+        
+        TEMPDIR=/data/nprohd_full_flashing
+        BOOT=/dev/sda1
+        SYS=/dev/sda2
+        DATA=/dev/sda3
+
+        FROMBOOT=$(find . -maxdepth 1 -name \*"boot"\*.pcl)
+        FROMSYS=$(find . -maxdepth 1 -name \*"system"\*.pcl)
+        FROMDATA=$(find . -maxdepth 1 -name \*"data"\*.pcl)  
+
+        mkdir -p $TEMPDIR && cd $TEMPDIR 
+        tar -xvf *.tgz
+
+        # TODO: check image before flash 
+        # partclone.chkimg -C -N -s $FROMSYSTEM --logfile $TEMPDIR/partclone.log 
+        # -C don't check free space and device size
+
+        # Step 1: Clone boot partition
+        # https://partclone.org/usage/partclone.dd.php
+        log "Flashing $FROMBOOT to $BOOT ..."
+        partclone.dd    -N -s $FROMBOOT     -o $BOOT && \
+        
+        # Step 2: Clone system partition
+        log "Flashing $FROMSYS to $SYS ..."
+        partclone.ext4  -N -r -s $FROMSYS  -o $SYS && \
+          
+        # Step 3: Clone data partition
+        log "Flashing $FROMDATA to $DATA ..."
+        partclone.vfat  -N -r -s $FROMDATA  -o $DATA && \
+        
+        infobox "Flashing full drive complete."   
+    else
+        errorbox "Data partition (/data) is not mounted! Contact the developer!"
+    fi  
+
+    #cat $FROM | gunzip -c | partclone.dd -N -d  -s - -o $TO && \
 }
 
 function reboot_prompt()
@@ -208,12 +226,13 @@ function reboot_prompt()
 # ===========================
 # CLONE MENU
 # ===========================
+
 # clone & compress - system partition only
-function clone_sda2()
+function clone_system()
 {
     if mount | grep -w /data > /dev/null; then
         FROM=/dev/sda2
-        TO=/mnt/usb/nprohd_sda2_$(date +%F_%H-%M-%S).img.gz
+        TO=/data/nprohd_sda2_$(date +%F_%H-%M-%S).img.gz
         log "Cloning $FROM to $TO ..."
         partclone.ext4 -N -c -s $FROM | gzip -c -6 > $TO && \
         log "Cloning $FROM to $TO succesful." 
@@ -222,16 +241,42 @@ function clone_sda2()
     fi  
 }
 
-# clone & compress - whole drivw
-function clone_sda()
+# clone & compress - whole drive
+function clone_full()
 {
     if mount | grep -w /data > /dev/null; then
+        
+        TEMPDIR=/data/nprohd_full 
+        BOOT=/dev/sda1
+        SYS=/dev/sda2
+        DATA=/dev/sda3
+        
+        TOBOOT=/data/${TEMPDIR}/nprohd_sda1_boot_$(date +%F--%H-%M-%S).pcl
+        TOSYS=/data/${TEMPDIR}/nprohd_sda2_system_$(date +%F--%H-%M-%S).pcl
+        TODATA=/data/${TEMPDIR}/nprohd_sda3_data_$(date +%F--%H-%M-%S).pcl
+
+        mkdir -p $TEMPDIR && cd $TEMPDIR 
+
+        # Step 1: Clone boot partition
         # https://partclone.org/usage/partclone.dd.php
-        FROM=/dev/sda
-        TO=/data/nprohd_sda_$(date +%F_%H-%M-%S).img.gz
-        log "Cloning $FROM to $TO ..."
-        partclone.dd -N -s $FROM | gzip -c -6 > $TO && \
-        log "Cloning $FROM to $TO succesful."   
+        log "Cloning $BOOT to $TOBOOT ..."
+        partclone.dd    -N -s $BOOT     -o $TOBOOT && \
+        
+        # Step 2: Clone system partition
+        log "Cloning $SYS to $TOSYS ..."
+        partclone.ext4  -N -c -s $SYS  -o $TOSYS && \
+          
+        # Step 3: Clone data partition
+        log "Cloning $DATA to $TODATA ..."
+        partclone.vfat  -N -c -s $DATA  -o $TODATA && \
+        
+        # Step 4: Compression 
+        tar -czvf nprohd_full_$(date +%F--%H-%M-%S).tgz .
+
+        # Step 5: Cleanup (if prefered)
+        # rm -v *.pcl
+
+        infobox "Flashing full drive complete. Check if boot works properly!"   
     else
         errorbox "Data partition (/data) is not mounted! Contact the developer!"
     fi   

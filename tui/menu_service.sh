@@ -18,6 +18,13 @@ BACKTITLE="Geshem Flasher 1.0"
 WIDTH=70
 
 # ===========================
+# FRAMEBUFFER RESOLUTION
+# ===========================
+# https://man.archlinux.org/man/fbset.8.en
+# Otherwise default 640x480 is used
+fbset -g 1920 1080 1920 1080 32
+
+# ===========================
 # COLORS WHIPTAIL
 # ===========================
 export STANDARD='
